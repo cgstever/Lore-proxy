@@ -56,9 +56,38 @@
 
 ---
 
+### 3. Confirmed Submissive
+**Gender:** Both  
+**Effect type:** Hybrid — mechanical stat mods + narrative via existing Submissive fragment tables  
+**Trigger type:** Probabilistic, tier-gated  
+
+**Trigger conditions:**
+- Arousal tier 17+
+- SUB fails a check at that tier
+- Roll d100 against fail band threshold:
+  - 0–4 fails: 10%
+  - 5–9 fails: 20%
+  - 10–14 fails: 30%
+  - 15–19 fails: 40%
+  - 20+ fails: 50%
+- Each orgasm this session adds +10% on top of the band percentage
+
+**Mechanic:**
+- SUB +5 (direct stat modification, ceiling 20)
+- WIL DC +1 on all resist checks for session
+- If Submissive effect is not already active, add it to active effects — uses Submissive fragment tables but displays as "Confirmed Submissive" in the side effects category
+- If Submissive is already active, stat mods only
+
+**Model context:** Fragment flavor from Submissive tables only — no names or numbers injected  
+**Status panel:** Appears under a separate Side Effects category, not with pill effects  
+**Conflicts:** Mutually exclusive with Tyrant — acquiring one removes the other  
+**Duration:** Session
+
+---
+
 ## Pending
 
-3. Confirmed Submissive
+4. Tyrant
 3. Confirmed Submissive
 4. Tyrant
 5. Masculinity Lockout
