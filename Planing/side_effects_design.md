@@ -35,13 +35,30 @@
   - etc.
 
 **Conflicts:** Incompatible with Enduramax. First acquired wins.  
-**Leads to:** Two in the Chamber (prerequisite)
+**Leads to:** Two in the Chamber (prerequisite)  
+**Session reset:** Orgasm counter resets each session. Must reach 3 orgasms again before rolls start, even if Hair Trigger was active last session.
+
+---
+
+### 2. Two in the Chamber
+**Gender:** Female only (implicit — same as Hair Trigger)  
+**Effect type:** Mechanical  
+**Trigger type:** Event-triggered + probabilistic  
+
+**Mechanic:**
+- After each orgasm, arousal resets to tier-3 instead of full reset — enabling one additional orgasm more easily
+- After that second orgasm within the chain, arousal fully resets
+
+**Prerequisite:** Hair Trigger must already be active in state this session  
+**Roll:** Same structure as Hair Trigger — same fail band percentages, same +10% per orgasm beyond 2nd  
+**Earliest possible trigger:** 4th orgasm (Hair Trigger fires on 3rd at earliest, Two in the Chamber cannot roll until the orgasm after Hair Trigger is active)  
+**Session reset:** Orgasm counter resets each session. Must reach 3 orgasms before rolls start regardless of prior session state.
 
 ---
 
 ## Pending
 
-2. Two in the Chamber
+3. Confirmed Submissive
 3. Confirmed Submissive
 4. Tyrant
 5. Masculinity Lockout
