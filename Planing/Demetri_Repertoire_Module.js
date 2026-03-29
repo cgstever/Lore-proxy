@@ -18,7 +18,7 @@ const forms = {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.0.2',
+    version: '1.0.3',
 
     init(data) { 
         return {
