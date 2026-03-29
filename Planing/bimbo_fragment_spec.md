@@ -11,7 +11,7 @@ The bimbo pill currently injects stage behavior text directly to the model, tell
 - The model witnesses a character's *voice devolving* over time, not being told "she is ditzy now"
 - A genius going bimbo reads completely differently from someone already dim
 - The delta between who they were and who they're becoming is the flavor
-- No new table infrastructure needed — bimbo stage acts as a stat penalty that slides the existing band lookup downward
+- No new table infrastructure needed — bimbo stage applies a band offset at lookup time, not to the raw stat
 
 ---
 
@@ -19,7 +19,9 @@ The bimbo pill currently injects stage behavior text directly to the model, tell
 
 At pill intake, store the character's current INT as `state.bimbo_baseline_int`.
 
-Use the gap between baseline and current INT to determine **delta tier**:
+The baseline is used silently each turn to calculate delta — the gap between who the character was and who they're becoming. It is not injected into state directly. It drives the lucid moment system (see §Lucid Moment System below).
+
+Delta tiers for reference:
 
 | Gap | Delta Tier | Voice Character |
 |-----|-----------|-----------------|
@@ -27,8 +29,6 @@ Use the gap between baseline and current INT to determine **delta tier**:
 | 2-3 | `small` | Slight slip. Character notices something's off but can't name it. |
 | 4-5 | `medium` | Noticeable degradation. Character insists they're fine. Defensive. |
 | 6+  | `large` | Sharp contrast. Visible collapse. The character *was* someone. |
-
-Delta tier is used to color overlay fragments (see §Overlay System below).
 
 ---
 
@@ -42,41 +42,64 @@ Threshold: `INT <= 4` (maps to `low` band) triggers short-circuit.
 
 ---
 
-## Stat Penalty Integration
+## Band Offset Integration
 
-Bimbo stage applies INT penalty as defined in existing stage data:
+Bimbo stage applies a band offset at fragment lookup time — not to the raw stat value. Whatever band INT would normally resolve to, bimbo stage shifts it downward by stage count. The stat itself is unchanged.
 
-| Stage | INT Penalty | Effective Band Shift |
-|-------|-------------|---------------------|
-| 1 | -1 | One band down |
-| 2 | -2 | Two bands down |
-| 3 | -3 | Three bands down |
-| 4 | -4 | Four bands down |
-| 5 | -5 | Five bands down (floor at `vlow`) |
+| Stage | Band Offset |
+|-------|-------------|
+| 1 | -1 band |
+| 2 | -2 bands |
+| 3 | -3 bands |
+| 4 | -4 bands |
+| 5 | -5 bands (floor at `vlow`) |
 
-The fragment table system already handles band lookup from stat value. No new tables required — bimbo stage rides the existing INT stat penalty mechanic.
+This ensures the offset always crosses band boundaries regardless of where in the band the raw stat sits.
 
 ---
 
-## Overlay System
+## Lucid Moment System
 
-The stat penalty handles the *destination* (what band fires). The overlay handles the *journey voice* — a short injected line that colors the current fragment with delta-tier appropriate language.
+The lucid moment is a brief contrast tag injected for one turn only when the character surfaces awareness of what is happening to them. It is not persistent state. It has no fixed trigger. It fires randomly based on two independent rolls — both must pass.
 
-Overlay fires only when:
-- `bimbo_stage >= 1`
-- `delta_tier != none` (short-circuit not triggered)
-- Overlays are 3-6 words, prepended to the INT fragment line
+The goal is organic, unpredictable surfacing of self-awareness during the devolve arc. It should never feel like a scheduled event.
 
-### Delta Tier Overlay Banks
+### Roll 1 — d100 vs Arousal
 
-**`small` (gap 2-3) — slight drift, character unaware**
+Roll d100. The threshold is derived from current arousal level — higher arousal makes passing harder.
+
+- Higher arousal = higher threshold = less likely to pass
+- Baseline INT scales the probability: higher baseline INT shifts the threshold more favorable
+- Exact threshold curve to be tuned during implementation
+
+### Roll 2 — CHA Check vs DC
+
+Roll current CHA against DC: `6 + session_failed_arousal_gates`
+
+- Uses current CHA (not baseline — CHA redirects under bimbo rather than tanking, so it stays a meaningful stat)
+- DC rises as the session progresses and failed gates accumulate
+- Both rolls must pass for the lucid moment to fire
+
+### Arc Self-Taper
+
+As bimbo stages advance, effective INT drops. The character's diminishing capacity naturally reduces the likelihood of Roll 1 clearing. No explicit stage gate needed — the arc tapers on its own. By late stages, both rolls clearing simultaneously becomes rare enough to feel like it's gone.
+
+### On Successful Roll
+
+Inject the contrast tag for that turn only. Gone the following turn. The tag reflects delta tier — the larger the gap between baseline and current INT, the sharper the contrast language.
+
+The model is not told when or how to use it. It is available context. If the scene calls for it, it surfaces. If not, it doesn't.
+
+### Delta Tier Contrast Tags (single-turn injection)
+
+**`small` (gap 2-3)**
 - "thoughts a little lighter than usual"
 - "something slipping before fully forming"
 - "simpler word came out than intended"
 - "easier not to finish the complicated ones"
 - "not noticing the gaps yet"
 
-**`medium` (gap 4-5) — noticeable, character defensive**
+**`medium` (gap 4-5)**
 - "I'm not faking anything"
 - "I'm fine, seriously"
 - "thoughts keep drifting somewhere easier"
@@ -84,7 +107,7 @@ Overlay fires only when:
 - "not struggling, nothing to struggle against"
 - "complicated things take effort and trail off"
 
-**`large` (gap 6+) — sharp collapse, was someone**
+**`large` (gap 6+)**
 - "used to be able to hold this thought"
 - "thinky-ness going somewhere pink and fuzzy"
 - "brain getting all gooey and silly"
@@ -97,7 +120,7 @@ Overlay fires only when:
 
 ## Short-Circuit Voice (Already There)
 
-When `INT <= 4` at intake and `bimbo_stage >= 1`, pull from settled bimbo voice. These replace the devolve overlays entirely — no journey, just state.
+When `INT <= 4` at intake and `bimbo_stage >= 1`, pull from settled bimbo voice. These replace the devolve arc entirely — no journey, just state. Lucid moment system does not fire in short-circuit path.
 
 **Settled voice fragments (INT low/vlow bands, bimbo active):**
 - "only one thing on her mind"
@@ -161,7 +184,7 @@ Character: no memory of another self. This is native ground.
 
 CHA under bimbo doesn't devolve — it *redirects*. High CHA bimbo characters become performatively attention-seeking rather than commanding. The band shift for CHA under bimbo should push toward exhibitionist/display language rather than downward in the same way INT does.
 
-Recommend: bimbo_stage shifts CHA lookup toward `avg` from above (flattening commanding presence into crowd-pleasing presence) rather than simply penalizing it. This needs separate handling from the INT penalty.
+Recommend: bimbo_stage shifts CHA lookup toward `avg` from above (flattening commanding presence into crowd-pleasing presence) rather than simply penalizing it. This needs separate handling from the INT band offset.
 
 CHA authoring note from flavor reference: *"bimbo | INT | CHA — cognition drain + presentation fixation"* — CHA isn't diminished, it's redirected.
 
@@ -171,20 +194,23 @@ CHA authoring note from flavor reference: *"bimbo | INT | CHA — cognition drai
 
 WIS under bimbo represents the disappearance of self-protective instinct. Stages 1-2: gut still whispering but character not listening. Stages 3-5: gut has gone quiet, or is pointing the wrong direction.
 
-No separate WIS penalty needed — INT penalty carries most of the load. WIS fragments at lower bands already capture the "instincts redirected" voice adequately.
+No separate WIS offset needed — INT band offset carries most of the load. WIS fragments at lower bands already capture the "instincts redirected" voice adequately.
 
 ---
 
 ## Implementation Checklist
 
 - [ ] Store `bimbo_baseline_int` at pill intake in state
-- [ ] Add delta tier calculation function comparing baseline to current INT
-- [ ] Add short-circuit check: `INT <= 4` at intake skips devolve overlays
-- [ ] Add delta tier overlay bank to bimbo data structure
-- [ ] Wire overlay injection to fire on bimbo stage > 0 when delta tier != none
+- [ ] Apply band offset at fragment lookup time (not to raw stat)
+- [ ] Add short-circuit check: `INT <= 4` at intake disables lucid moment system
+- [ ] Add delta tier calculation function (baseline minus current effective INT)
+- [ ] Implement dual-roll lucid moment system (d100 vs arousal + CHA vs DC)
+- [ ] Scale Roll 1 probability by baseline INT
+- [ ] Author delta tier contrast tag banks (small / medium / large)
 - [ ] Author settled voice fragment bank for short-circuit path
-- [ ] Handle CHA redirect logic separately from INT penalty
+- [ ] Handle CHA redirect logic separately from INT band offset
 - [ ] Remove stage behavior text injection (or keep as internal dev notes only)
+- [ ] Tune arousal threshold curve for Roll 1
 
 ---
 
@@ -194,6 +220,6 @@ No separate WIS penalty needed — INT penalty carries most of the load. WIS fra
 - Gender-specific bimbo tables (existing gendered INT tables handle this)
 - Changes to the fragment table structure itself
 - Separate bimbo band entries
+- Persistent state fields for lucid moment contrast tags
 
-The system rides entirely on existing infrastructure plus two small additions: baseline tracking and a delta-tier overlay bank.
-
+The system rides entirely on existing infrastructure plus: baseline tracking, band offset at lookup, and a dual-roll lucid moment system.
