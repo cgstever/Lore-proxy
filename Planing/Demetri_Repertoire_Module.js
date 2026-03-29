@@ -18,7 +18,7 @@ const forms = {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.0.3',
+    version: '1.0.4',
 
     init(data) { 
         return {
@@ -29,7 +29,7 @@ export default {
     },
 
     processTurn({ state, systemText, messages, charNameHint, personaName } = {}) {
-        if (!state) state = this.init();
+        if (!state || !state.activeForms) state = this.init();
 
         let header = `[STATEFUL LORE MODULE: DEMETRI REPERTOIRE]\n\n`;
         
