@@ -1,6 +1,6 @@
 # X-Change World — Lore Engine
 
-The main lore and state engine for the X-Change World universe, designed to run inside SillyTavern via the [StatefullLore](https://github.com/cgstever/StatefullLore) extension.
+The main lore and state engine for the X-Change World universe, designed to run inside SillyTavern via the [StatefulLore](https://github.com/cgstever/StatefulLore) extension.
 
 X-Change World is a comprehensive stateful lore engine that tracks character transformation, arousal, clothing, effects, stats, and narrative state across an entire roleplay session. It detects in-story events (pill intake, encounters, transformations), builds dynamic context headers for the language model, and drives game mechanics — all without the model needing to remember world state.
 
@@ -19,10 +19,10 @@ X-Change World is a comprehensive stateful lore engine that tracks character tra
 
 ## How It Works
 
-The engine implements the `processTurn()` and `handleResponse()` interface expected by StatefullLore:
+The engine implements the `processTurn()` and `handleResponse()` interface expected by StatefulLore:
 
-1. **Each turn**, StatefullLore calls into the engine to build context headers
-2. The engine reads current state from IndexedDB (via StatefullLore) and assembles a rich system prompt
+1. **Each turn**, StatefulLore calls into the engine to build context headers
+2. The engine reads current state from IndexedDB (via StatefulLore) and assembles a rich system prompt
 3. After the AI responds, `detectEvents()` scans the response for game-relevant events
 4. `processEvents()` applies state mutations (stat changes, effect applications, transformations)
 5. Updated state is persisted back to IndexedDB for the next turn
@@ -33,7 +33,7 @@ The engine implements the `processTurn()` and `handleResponse()` interface expec
 |----------|---------|
 | `buildHeader()` | Main header builder — called every turn to inject current state |
 | `buildTransformationGuidance()` | Builds prose guidance for transformation scenes |
-| `processTurn()` | Entry point called by StatefullLore each turn |
+| `processTurn()` | Entry point called by StatefulLore each turn |
 | `detectEvents()` | Scans AI response for game events (pill intake, etc.) |
 | `processEvents()` | Applies detected events to character state |
 | `evaluateFragments()` | Selects relevant lore fragments based on current state |
@@ -46,7 +46,7 @@ The engine implements the `processTurn()` and `handleResponse()` interface expec
 ```
 overwrite-st/
 ├── x_change_world.js            ← Main lore/state engine (~7.5 MB, v6.5.28)
-├── version.json                 ← Version string polled by StatefullLore on startup
+├── version.json                 ← Version string polled by StatefulLore on startup
 ├── transform_body_compact.js    ← Stat-driven flavor/prose tables (~14 MB, archived)
 ├── master_world.js              ← Supplementary world logic (~110 KB)
 ├── x_change_world_v5.0.7.json  ← Legacy backup (v5.0.7, ~104 KB)
@@ -61,9 +61,9 @@ overwrite-st/
 └── README.md
 ```
 
-## Relationship with StatefullLore
+## Relationship with StatefulLore
 
-This repository contains only the **lore engine** (the game logic and data). To actually use it, you need the [StatefullLore](https://github.com/cgstever/StatefullLore) SillyTavern extension, which:
+This repository contains only the **lore engine** (the game logic and data). To actually use it, you need the [StatefulLore](https://github.com/cgstever/StatefulLore) SillyTavern extension, which:
 
 1. Loads `x_change_world.js` as a lore module
 2. Provides the IndexedDB persistence layer for state
@@ -73,7 +73,7 @@ This repository contains only the **lore engine** (the game logic and data). To 
 ### Auto-Update Flow
 
 ```
-StatefullLore startup
+StatefulLore startup
     → fetches version.json from this repo
     → compares with loaded version
     → if different, downloads fresh x_change_world.js
@@ -83,7 +83,7 @@ StatefullLore startup
 ## Installation
 
 1. Install [SillyTavern](https://github.com/SillyTavern/SillyTavern)
-2. Install the [StatefullLore](https://github.com/cgstever/StatefullLore) extension
+2. Install the [StatefulLore](https://github.com/cgstever/StatefulLore) extension
 3. The extension auto-downloads `x_change_world.js` from this repo on first run
 
 The raw URL used by the extension:
@@ -98,7 +98,7 @@ https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js
 
 ## Related Projects
 
-- [StatefullLore](https://github.com/cgstever/StatefullLore) — The SillyTavern extension that loads and runs this engine
+- [StatefulLore](https://github.com/cgstever/StatefulLore) — The SillyTavern extension that loads and runs this engine
 - [simple-lore](https://github.com/cgstever/simple-lore) — A minimal D&D 5e RPG module for the same engine
 
 ## License
