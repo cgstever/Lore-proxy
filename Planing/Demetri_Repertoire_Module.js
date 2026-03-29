@@ -101,32 +101,33 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
         return { state, cleanedText };
     },
 
-    getSettingsHtml(config) {
-        // _hudState is updated via updateHud each turn
+    _getHudContent() {
         const state = _hudState;
-        if (!state) return `<div id="demetri-hud" style="color:#888;padding:8px;">Waiting for first turn...</div>`;
+        if (!state) return `<span style="color:#888;padding:8px;">Waiting for first turn...</span>`;
         return `
-            <div id="demetri-hud" style="font-family: sans-serif; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #444; border-radius: 5px;">
-                <h3 style="margin-top: 0; color: #ff99cc;">Demetri Repertoire</h3>
-                <div style="background: rgba(255,153,204,0.15); border: 1px solid #ff99cc; border-radius: 4px; padding: 8px; margin-bottom: 8px;">
-                    <div style="color: #aaa; font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px;">Currently Active</div>
-                    <div style="color: #fff; font-size: 1.1em; font-weight: bold; margin-top: 2px;">${state.activeForms.join(" + ")}</div>
-                </div>
-                <p style="margin: 4px 0;"><strong>Madison:</strong> ${state.madisonManifested ? "✅ Manifested" : "💭 Voice only"}</p>
-                <details>
-                    <summary><strong>Mastered Forms (${state.masteredForms.length})</strong></summary>
-                    <ul style="margin: 5px 0 0 20px; padding: 0;">
-                        ${state.masteredForms.map(f => `<li style="color:${state.activeForms.includes(f) ? '#ff99cc' : 'inherit'}">${f}${state.activeForms.includes(f) ? ' ◀' : ''}</li>`).join("")}
-                    </ul>
-                </details>
+            <h3 style="margin-top: 0; color: #ff99cc;">Demetri Repertoire</h3>
+            <div style="background: rgba(255,153,204,0.15); border: 1px solid #ff99cc; border-radius: 4px; padding: 8px; margin-bottom: 8px;">
+                <div style="color: #aaa; font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px;">Currently Active</div>
+                <div style="color: #fff; font-size: 1.1em; font-weight: bold; margin-top: 2px;">${state.activeForms.join(" + ")}</div>
             </div>
+            <p style="margin: 4px 0;"><strong>Madison:</strong> ${state.madisonManifested ? "✅ Manifested" : "💭 Voice only"}</p>
+            <details>
+                <summary><strong>Mastered Forms (${state.masteredForms.length})</strong></summary>
+                <ul style="margin: 5px 0 0 20px; padding: 0;">
+                    ${state.masteredForms.map(f => `<li style="color:${state.activeForms.includes(f) ? '#ff99cc' : 'inherit'}">${f}${state.activeForms.includes(f) ? ' ◀' : ''}</li>`).join("")}
+                </ul>
+            </details>
         `;
+    },
+
+    getSettingsHtml(config) {
+        return `<div id="demetri-hud" style="font-family: sans-serif; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #444; border-radius: 5px;">${this._getHudContent()}</div>`;
     },
 
     updateHud(state, config) {
         _hudState = state;
         const el = document.getElementById('demetri-hud');
-        if (el) el.innerHTML = this.getSettingsHtml(config);
+        if (el) el.innerHTML = this._getHudContent();
     }
 };
 
