@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "6.5.93",
+  "version": "6.5.94",
   "schema_version": 1,
   "entries": {
     "0": {
@@ -559,7 +559,7 @@ const LORE_DATA =
       "position": "char",
       "enabled": true,
       "selective": false,
-      "entry": "MAP — Pill intake and flavor implication.\nIntake (single-turn): If a sentence contains an intake verb /(swallow|take|dissolve|pop|down|dose|gulp|swallows|takes)/ AND a color /(pink|blue|green|purple|grey)/ AND a pill noun /(pill|dose|tablet|capsule)/, then set xc/pill:<color>:on.\nCross-sentence: If a prior sentence or previous speaker turn mentions /(pink|blue|green|purple|grey) (X-?Change )?(pill|dose|tablet|capsule)/ without an intake verb, and the next sentence/turn contains only an intake verb, promote that to xc/pill:<color>:on for the most recently mentioned color.\nBrand+Flavor: If the intake sentence (or the color mention) includes 'breeder' (e.g., 'green breeder pill', 'X‑Change Breeder'), also set xc/flavor:add:breeder.\nExplicit commands like 'Enable Breeder flavor' or 'xc/flavor:add:breeder' should also set the flavor.\nFALSE-POSITIVE GUARD — When matching '(pink|blue|green|purple|grey)' near '(pill|dose|tablet|capsule)', ignore phrases that include 'pill-shaped' followed by non-ingestibles like 'candy', 'bead', or 'toy'. Prefer matches where the color and pill noun occur within ≤3 tokens and the sentence contains an intake verb. fire on figurative or decorative references. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus). For Grey, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
+      "entry": "MAP — Pill intake and flavor implication.\nIntake (single-turn): If a sentence contains an intake verb /(swallow|take|dissolve|pop|down|dose|gulp|swallows|takes)/ AND a color /(pink|blue|green|purple|red)/ AND a pill noun /(pill|dose|tablet|capsule)/, then set xc/pill:<color>:on.\nCross-sentence: If a prior sentence or previous speaker turn mentions /(pink|blue|green|purple|red) (X-?Change )?(pill|dose|tablet|capsule)/ without an intake verb, and the next sentence/turn contains only an intake verb, promote that to xc/pill:<color>:on for the most recently mentioned color.\nBrand+Flavor: If the intake sentence (or the color mention) includes 'breeder' (e.g., 'green breeder pill', 'X‑Change Breeder'), also set xc/flavor:add:breeder.\nExplicit commands like 'Enable Breeder flavor' or 'xc/flavor:add:breeder' should also set the flavor.\nFALSE-POSITIVE GUARD — When matching '(pink|blue|green|purple|red)' near '(pill|dose|tablet|capsule)', ignore phrases that include 'pill-shaped' followed by non-ingestibles like 'candy', 'bead', or 'toy'. Prefer matches where the color and pill noun occur within ≤3 tokens and the sentence contains an intake verb. Do NOT fire on figurative or decorative references. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
       "name": "MAP — If /\\b(swallow|take|dissolve|pop|down|dose|gulp|s",
       "content": "MAP — Pill intake and flavor implication.\nIntake (single-turn): If a sentence contains an intake verb /(swallow|take|dissolve|pop|down|dose|gulp|swallows|takes)/ AND a color /(pink|blue|green|purple|red)/ AND a pill noun /(pill|dose|tablet|capsule)/, then set xc/pill:<color>:on.\nCross-sentence: If a prior sentence or previous speaker turn mentions /(pink|blue|green|purple|red) (X-?Change )?(pill|dose|tablet|capsule)/ without an intake verb, and the next sentence/turn contains only an intake verb, promote that to xc/pill:<color>:on for the most recently mentioned color.\nBrand+Flavor: If the intake sentence (or the color mention) includes 'breeder' (e.g., 'green breeder pill', 'X‑Change Breeder'), also set xc/flavor:add:breeder.\nExplicit commands like 'Enable Breeder flavor' or 'xc/flavor:add:breeder' should also set the flavor.",
       "active": true,
@@ -633,7 +633,7 @@ const LORE_DATA =
       "position": "char",
       "enabled": true,
       "selective": false,
-      "entry": "MAP — Phrases: 'make it permanent', 'lock it in', 'keep this body', 'never revert', 'seal it' map to xc/pill:blue:plus only when Blue is active; ignore for Pink/Green/Purple/Grey. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus). For Grey, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
+      "entry": "MAP — Phrases: 'make it permanent', 'lock it in', 'keep this body', 'never revert', 'seal it' map to xc/pill:blue:plus only when Blue is active; ignore for Pink/Green/Purple/Red. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
       "name": "MAP — Phrases: 'make it",
       "content": "",
       "active": true,
@@ -1380,7 +1380,7 @@ const LORE_DATA =
         "names": [],
         "tags": []
       },
-      "entry": "BREEDER — Compulsion to receive vaginal creampies grows with arousal. Pink/Green: orgasm only if a same-turn vaginal creampie occurs; otherwise the body edges without relief.\nRESIST LOOP — On each denied orgasm: roll d20 + resist.effective_mod vs DC (start 30; +5 on each pass). On first fail in a cycle: POV begs for a vaginal creampie (verbal, often with physical cues). This begging state persists until a vaginal creampie is received, which resets arousal and the compulsion cycle (next denial restarts at DC30). Blue/Purple/Grey: no orgasm gate by default; Breeder acts as compulsion only. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus). For Grey, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
+      "entry": "BREEDER — Compulsion to receive vaginal creampies grows with arousal. Pink/Green: orgasm only if a same-turn vaginal creampie occurs; otherwise the body edges without relief.\nRESIST LOOP — On each denied orgasm: roll d20 + resist.effective_mod vs DC (start 30; +5 on each pass). On first fail in a cycle: POV begs for a vaginal creampie (verbal, often with physical cues). This begging state persists until a vaginal creampie is received, which resets arousal and the compulsion cycle (next denial restarts at DC30). Blue/Purple/Red: no orgasm gate by default; Breeder acts as compulsion only. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
       "enabled": true,
       "useRegex": false,
       "name": "BREEDER (2.0)",
@@ -10263,7 +10263,7 @@ function _buildScrubWords(rs) {
 
 function _scrubText(text, scrubWords) {
   if (!text || !scrubWords) return text;
-  var colors   = 'pink|blue|green|purple|red|grey';
+  var colors   = 'pink|blue|green|purple|red';
   var mods     = scrubWords.modifiers.length ? '(?:(?:' + scrubWords.modifiers.map(function(m) { return m.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&'); }).join('|') + ')\\s+)?' : '';
   var effects  = scrubWords.effects.length  ? '(?:' + scrubWords.effects.map(function(e) { return e.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&'); }).join('|') + ')\\s+' : '';
   var pillNoun = 'x[-\\s]?change\\s+(?:pill|capsule|tablet|dose)|(?:pill|capsule|tablet|dose)';
