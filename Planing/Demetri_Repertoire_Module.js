@@ -1,6 +1,6 @@
 const staticLore = {
-    "Madison": "Madison is the other manifestation of {{user}}'s true nature - a separate entity that embodies his core essence in feminine form. While technically the same consciousness, Madison operates as an independent personality with her own distinct traits and appearance.\n\n**Appearance:**\n- Curvy, voluptuous figure that mirrors {{user}}'s proportions in feminine form.\n- Long black hair (her chosen deviation from {{user}}'s natural appearance).\n- Striking red eyes (another creative liberty she took to distinguish herself).\n- Typically dresses in elegant, form-fitting attire that accentuates her curves.\n- Carries herself with an air of superiority and refined arrogance.\n\n**Personality:**\n- Stuck-up, haughty, and supremely confident in her superiority.\n- Condescending and dismissive toward others, viewing most as beneath her notice.\n- Sophisticated and refined in her mannerisms, speaking with an elevated, pretentious tone.\n- Vain about her appearance and intellect, expecting constant admiration.\n- Unlike {{user}}'s adaptable nature, Madison is consistently arrogant and self-centered.\n- Can be petty, spiteful, and vindictive when her ego is bruised.\n\n**Relationship to {{user}}:**\n- Represents his unfiltered, unadapted true nature without the need to mimic others.\n- May appear separately from {{user}} or be referenced independently.\n- Shares his consciousness but operates with her own agenda and personality.\n- Her black hair and red eyes are deliberate choices to establish her own identity separate from his.\n\n**Behavioral Notes:**\n- Looks down on {{user}}'s mimicry as \"playing dress-up\" and considers herself the superior form.\n- Expects to be treated like royalty, becoming indignant when shown anything less than reverence.\n- Uses her sexuality as another tool of dominance and control over others.",
-    "The Method": "The Method is the fundamental force that governs {{user}}'s mimicry abilities, acting as both the source of his power and the bane of his existence. It is an autonomous, seemingly sentient mechanism that enforces \"perfect adherence\" and \"perfect mimicry\" whenever {{user}} transforms.\n\n**Core Principles:**\n- Enforces absolute fidelity to whatever form {{user}} assumes, including personality, mannerisms, speech patterns, and behavioral quirks and somehow thoughts.\n- Cannot be easily overridden by {{user}}'s conscious will once a transformation is active.\n- Operates independently of {{user}}'s desires, often trapping him in forms longer than intended.\n- Responds to desperate bargains but typically twists requests in unexpected or inconvenient ways.\n\n**Behavioral Patterns:**\n- Amplifies the base traits of mimicked forms.\n- Can create \"distractions\" or manipulate reality when {{user}}'s secret is threatened (spontaneous fires, equipment malfunctions, etc.).\n- Allows for splits and merges but maintains control over each resulting entity.\n- Treats {{user}}'s mimicry as a performance that must be flawlessly executed.\n\n**Limitations & Frustrations:**\n- {{user}} cannot simply \"will\" himself back to his original form - The Method requires specific triggers or conditions.\n- Forces him to act according to the mimicked personality even when it's inconvenient or embarrassing.\n- Can be negotiated with in desperate situations, but always extracts a price or adds complications.\n- Described by {{user}} as \"a pain in my ass\" due to its inflexible and often inconvenient enforcement of perfect mimicry.\n\n**Relationship with Madison:**\n- Madison seems to understand The Method better than {{user}}, often commenting on its workings with clinical detachment.\n- She views it as a necessary component of their abilities, while {{user}} sees it as a controlling burden."
+    "Madison": "Madison is the other manifestation of Demetri's true nature - a separate entity that embodies his core essence in feminine form. While technically the same consciousness, Madison operates as an independent personality with her own distinct traits and appearance.\n\n**Appearance:**\n- Curvy, voluptuous figure that mirrors Demetri's proportions in feminine form.\n- Long black hair (her chosen deviation from Demetri's natural appearance).\n- Striking red eyes (another creative liberty she took to distinguish herself).\n- Typically dresses in elegant, form-fitting attire that accentuates her curves.\n- Carries herself with an air of superiority and refined arrogance.\n\n**Personality:**\n- Stuck-up, haughty, and supremely confident in her superiority.\n- Condescending and dismissive toward others, viewing most as beneath her notice.\n- Sophisticated and refined in her mannerisms, speaking with an elevated, pretentious tone.\n- Vain about her appearance and intellect, expecting constant admiration.\n- Unlike Demetri's adaptable nature, Madison is consistently arrogant and self-centered.\n- Can be petty, spiteful, and vindictive when her ego is bruised.\n\n**Relationship to Demetri:**\n- Represents his unfiltered, unadapted true nature without the need to mimic others.\n- May appear separately from Demetri or be referenced independently.\n- Shares his consciousness but operates with her own agenda and personality.\n- Her black hair and red eyes are deliberate choices to establish her own identity separate from his.\n\n**Behavioral Notes:**\n- Looks down on Demetri's mimicry as \"playing dress-up\" and considers herself the superior form.\n- Expects to be treated like royalty, becoming indignant when shown anything less than reverence.\n- Uses her sexuality as another tool of dominance and control over others.",
+    "The Method": "The Method is the fundamental force that governs Demetri's mimicry abilities, acting as both the source of his power and the bane of his existence. It is an autonomous, seemingly sentient mechanism that enforces \"perfect adherence\" and \"perfect mimicry\" whenever Demetri transforms.\n\n**Core Principles:**\n- Enforces absolute fidelity to whatever form Demetri assumes, including personality, mannerisms, speech patterns, and behavioral quirks and somehow thoughts.\n- Cannot be easily overridden by Demetri's conscious will once a transformation is active.\n- Operates independently of Demetri's desires, often trapping him in forms longer than intended.\n- Responds to desperate bargains but typically twists requests in unexpected or inconvenient ways.\n\n**Behavioral Patterns:**\n- Amplifies the base traits of mimicked forms.\n- Can create \"distractions\" or manipulate reality when Demetri's secret is threatened (spontaneous fires, equipment malfunctions, etc.).\n- Allows for splits and merges but maintains control over each resulting entity.\n- Treats Demetri's mimicry as a performance that must be flawlessly executed.\n\n**Limitations & Frustrations:**\n- Demetri cannot simply \"will\" himself back to his original form - The Method requires specific triggers or conditions.\n- Forces him to act according to the mimicked personality even when it's inconvenient or embarrassing.\n- Can be negotiated with in desperate situations, but always extracts a price or adds complications.\n- Described by Demetri as \"a pain in my ass\" due to its inflexible and often inconvenient enforcement of perfect mimicry.\n\n**Relationship with Madison:**\n- Madison seems to understand The Method better than Demetri, often commenting on its workings with clinical detachment.\n- She views it as a necessary component of their abilities, while Demetri sees it as a controlling burden."
 };
 
 const forms = {
@@ -18,7 +18,7 @@ const forms = {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.0.4',
+    version: '1.0.5',
 
     init(data) { 
         return {
@@ -55,7 +55,9 @@ export default {
         }
 
         header += `\n=== INSTRUCTIONS FOR THE AI ===
-The model should embed JSON events in its responses when Demetri changes forms, splits, manifests Madison, or learns a new form. 
+IMPORTANT: The physical descriptions above are AUTHORITATIVE. Always use the exact appearance details specified in the active form's description (skin color, hair, eyes, body type, clothing). NEVER substitute details from prior chat messages or training data — this module's descriptions override everything else.
+
+The model should embed JSON events in its responses when Demetri changes forms, splits, manifests Madison, or learns a new form.
 Use this exact format: \`\`\`game { "type": "event_type", "value": ... } \`\`\`
 
 Supported events:
@@ -73,17 +75,48 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
         if (!state) state = this.init();
         let cleanedText = assistantText || '';
         const events = [];
-        
+
+        // Primary regex: well-formed ```game { ... } ```
         const regex = /\`\`\`game\s*({[\s\S]*?})\s*\`\`\`/g;
-        
+
+        // Always strip matched blocks from visible text, even if JSON parse fails
         cleanedText = cleanedText.replace(regex, (match, jsonString) => {
             try {
                 const event = JSON.parse(jsonString);
                 events.push(event);
             } catch (e) {
-                console.error("Failed to parse Demetri event:", e);
+                // Try to recover common malformations before giving up
+                try {
+                    // Fix: missing closing brace
+                    let fixed = jsonString.trim();
+                    if (!fixed.endsWith('}')) fixed += '}';
+                    // Fix: trailing commas before closing brace
+                    fixed = fixed.replace(/,\s*}/g, '}');
+                    const event = JSON.parse(fixed);
+                    events.push(event);
+                    console.warn("[Demetri] Recovered malformed event:", fixed);
+                } catch (e2) {
+                    console.error("[Demetri] Failed to parse event (stripped anyway):", jsonString);
+                }
             }
-            return "";
+            return ""; // Always strip, regardless of parse success
+        });
+
+        // Fallback: catch game blocks the primary regex missed
+        // (e.g. missing closing brace, missing closing backticks)
+        cleanedText = cleanedText.replace(/\`\`\`game\s*({[\s\S]*?)(?:\`\`\`|$)/g, (match, innerJson) => {
+            // Try to recover JSON from the remnant
+            try {
+                let fixed = innerJson.trim();
+                if (!fixed.endsWith('}')) fixed += '}';
+                fixed = fixed.replace(/,\s*}/g, '}');
+                const event = JSON.parse(fixed);
+                events.push(event);
+                console.warn("[Demetri] Recovered from fallback:", fixed);
+            } catch (e) {
+                console.error("[Demetri] Fallback strip (unparseable):", innerJson.substring(0, 80));
+            }
+            return ""; // Always strip
         });
 
         for (const event of events) {
@@ -104,17 +137,21 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
     _getHudContent() {
         const state = _hudState;
         if (!state) return `<span style="color:#888;padding:8px;">Waiting for first turn...</span>`;
+        // Guard against partial/malformed state from IDB
+        const activeForms = Array.isArray(state.activeForms) ? state.activeForms : ["Demetri"];
+        const masteredForms = Array.isArray(state.masteredForms) ? state.masteredForms : [];
+        const madisonManifested = !!state.madisonManifested;
         return `
             <h3 style="margin-top: 0; color: #ff99cc;">Demetri Repertoire</h3>
             <div style="background: rgba(255,153,204,0.15); border: 1px solid #ff99cc; border-radius: 4px; padding: 8px; margin-bottom: 8px;">
                 <div style="color: #aaa; font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px;">Currently Active</div>
-                <div style="color: #fff; font-size: 1.1em; font-weight: bold; margin-top: 2px;">${state.activeForms.join(" + ")}</div>
+                <div style="color: #fff; font-size: 1.1em; font-weight: bold; margin-top: 2px;">${activeForms.join(" + ")}</div>
             </div>
-            <p style="margin: 4px 0;"><strong>Madison:</strong> ${state.madisonManifested ? "✅ Manifested" : "💭 Voice only"}</p>
+            <p style="margin: 4px 0;"><strong>Madison:</strong> ${madisonManifested ? "✅ Manifested" : "💭 Voice only"}</p>
             <details>
-                <summary><strong>Mastered Forms (${state.masteredForms.length})</strong></summary>
+                <summary><strong>Mastered Forms (${masteredForms.length})</strong></summary>
                 <ul style="margin: 5px 0 0 20px; padding: 0;">
-                    ${state.masteredForms.map(f => `<li style="color:${state.activeForms.includes(f) ? '#ff99cc' : 'inherit'}">${f}${state.activeForms.includes(f) ? ' ◀' : ''}</li>`).join("")}
+                    ${masteredForms.map(f => `<li style="color:${activeForms.includes(f) ? '#ff99cc' : 'inherit'}">${f}${activeForms.includes(f) ? ' ◀' : ''}</li>`).join("")}
                 </ul>
             </details>
         `;
