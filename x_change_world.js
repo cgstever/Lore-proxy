@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "6.5.96",
+  "version": "6.5.97",
   "schema_version": 1,
   "entries": {
     "0": {
@@ -7874,7 +7874,7 @@ function _checkOrgasmTrigger(state, ctx, events, rs) {
           return { orgasm: true, roll: { d100: roll, target: triggerPct } };
         } else {
           // Denied — d20+INT check: pass = no beg, fail = beg
-          const intMod = getStatMod(state, 'INT');
+          const intMod = getStatMod(state, 'INT_mod');
           const d20 = randInt(1, 20);
           const intDc = parseInt(state._arousal_gate_dc || rs.arousal_system?.level_gate_dc || 10, 10);
           const intTotal = d20 + intMod;
@@ -11850,7 +11850,7 @@ function getDebugInfo(state, events, config, personaState) {
     const persona = 'Player';
     const pTitle = 'PERSONA: ' + persona;
     _personaBlockLines.push('\u250C\u2500 ' + pTitle + ' ' + '\u2500'.repeat(Math.max(1, W - pTitle.length - 3)) + '\u2510');
-    const pLn2 = (label, val) => { _personaBlockLines.push(_ln(label, val, '\u2502')); };
+    const pLn2 = (label, val) => { const v = String(val == null ? '' : val); _personaBlockLines.push('\u2502 ' + (label || '').padEnd(LW) + ' ' + v.padEnd(VW) + ' \u2502'); };
     pLn2('stats', fmtStats(ps.stats));
     pLn2('pill', ps.active_pill || 'none');
     pLn2('effects', (ps.active_effects || ps.effects || []).join(', ') || 'none');
