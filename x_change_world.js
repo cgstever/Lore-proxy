@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "6.5.94",
+  "version": "6.5.95",
   "schema_version": 1,
   "entries": {
     "0": {
@@ -591,69 +591,6 @@ const LORE_DATA =
       "selectiveLogic": 0,
       "addMemo": false,
       "order": 9,
-      "ignoreBudget": false,
-      "excludeRecursion": false,
-      "preventRecursion": false,
-      "matchPersonaDescription": false,
-      "matchCharacterDescription": false,
-      "matchCharacterPersonality": false,
-      "matchCharacterDepthPrompt": false,
-      "matchScenario": false,
-      "matchCreatorNotes": false,
-      "delayUntilRecursion": 0,
-      "depth": 4,
-      "outletName": "",
-      "group": "",
-      "groupOverride": false,
-      "scanDepth": null,
-      "caseSensitive": null,
-      "matchWholeWords": null,
-      "useGroupScoring": null,
-      "automationId": "",
-      "cooldown": null,
-      "delay": null,
-      "triggers": [],
-      "characterFilter": {
-        "isExclude": false,
-        "names": [],
-        "tags": []
-      }
-    },
-    "10": {
-      "uid": 11,
-      "comment": "NL→TOKEN: blue plus | merged-from-uid-31",
-      "sticky": 1000000,
-      "displayIndex": 10,
-      "role": "system",
-      "groupWeight": 100,
-      "probability": 100,
-      "useProbability": true,
-      "disable": false,
-      "useRegex": false,
-      "position": "char",
-      "enabled": true,
-      "selective": false,
-      "entry": "MAP — Phrases: 'make it permanent', 'lock it in', 'keep this body', 'never revert', 'seal it' map to xc/pill:blue:plus only when Blue is active; ignore for Pink/Green/Purple/Red. For Green, pregnancy (Breeder path) sets permanent=true and the flavor remains (no Plus).",
-      "name": "MAP — Phrases: 'make it",
-      "content": "",
-      "active": true,
-      "keys": [
-        "make it",
-        "inside",
-        "creampie",
-        "fill",
-        "breed",
-        "breed me"
-      ],
-      "orig_uid": "100010",
-      "orig_book": "core",
-      "key": [],
-      "keysecondary": [],
-      "constant": false,
-      "vectorized": false,
-      "selectiveLogic": 0,
-      "addMemo": false,
-      "order": 10,
       "ignoreBudget": false,
       "excludeRecursion": false,
       "preventRecursion": false,
@@ -2930,7 +2867,7 @@ const LORE_DATA =
       ],
       "effect": "bimbo",
       "requires_pill": true,
-      "note": "Intelligence overlay, staged degradation."
+      "note": "Intelligence degradation via dice rolls on masculinity gate."
     },
     "denial": {
       "keywords": [
@@ -4481,7 +4418,7 @@ const LORE_DATA =
       ],
       "effect": "bimbo",
       "requires_pill": true,
-      "note": "Intelligence overlay, staged degradation."
+      "note": "Intelligence degradation via dice rolls on masculinity gate."
     },
     {
       "keywords": [
@@ -9150,7 +9087,7 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   return lines.join('\n');
 }
 
-function _bodyModText(state, band, origin) {
+function _bodyModText(state, band) {
   const result = {};
   const cardBody = state.card_body;
   if (!cardBody) return result;
@@ -9427,7 +9364,7 @@ function getIdentityText(state) {
     }
 
     // Layer 3: Body mod text
-    const bodyExtra = _bodyModText(state, band, origin);
+    const bodyExtra = _bodyModText(state, band);
     const bodyPhrase = bodyExtra[stat] || '';
     if (bodyPhrase) candidates.push([stat, 2, bodyPhrase]);
   }
@@ -10052,13 +9989,8 @@ function scanAssistantPillIntake(text, state, rs) {
       continue;
     }
 
-    // Check that a pill noun or color is nearby (within proximity window)
     // Proximity check — need pill context in the message to avoid bare false positives.
     // Widen to full message text since pill may have been established several turns ago.
-    const contextWindow = text.slice(
-      Math.max(0, idx - 60),
-      Math.min(text.length, idx + verb.length + 60)
-    );
     const hasPillContext = rs.pill_context_re && rs.pill_context_re.test(text);
     const hasPillNoun = rs.pill_noun_re && rs.pill_noun_re.test(text);
     const colorInMsg = new RegExp('\\b' + reEscape(pendingColor) + '\\b', 'i').test(text);
@@ -10083,7 +10015,10 @@ function scanAssistantPillIntake(text, state, rs) {
     }
 
     // Cum-context exclusion — don't fire pill intake if verb is in sexual cum context
-    const cumCtxWindow = contextWindow;
+    const cumCtxWindow = text.slice(
+      Math.max(0, idx - 60),
+      Math.min(text.length, idx + verb.length + 60)
+    );
     const hasCumCtx = /(?:cum|load|seed|jizz|spunk|release|semen)/i.test(cumCtxWindow);
     const hasPillNounNearby = rs.pill_noun_re && rs.pill_noun_re.test(cumCtxWindow);
     if (hasCumCtx && !hasPillNounNearby) {
