@@ -37,7 +37,7 @@ function detectPendingForm(messages, knownForms) {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.6.0',
+    version: '1.7.0',
 
     init(data) { 
         return {
@@ -206,8 +206,38 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
         `;
     },
 
+    _injectFloatingHud() {
+        if (document.getElementById('demetri-floating-hud')) return;
+        const hud = document.createElement('div');
+        hud.id = 'demetri-floating-hud';
+        hud.style.cssText = `
+            position: fixed; top: 80px; right: 20px; z-index: 9999;
+            width: 240px; background: rgba(0,0,0,0.85); border: 1px solid #ff99cc;
+            border-radius: 8px; font-family: sans-serif; color: #fff;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5); user-select: none;
+        `;
+        hud.innerHTML = `
+            <div id="demetri-hud-drag" style="cursor:grab; padding:8px 10px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.8em; color:#ff99cc; font-weight:bold;">Demetri HUD</span>
+                <span id="demetri-hud-close" style="cursor:pointer; color:#aaa; font-size:1em;">✕</span>
+            </div>
+            <div id="demetri-hud" style="padding:10px;"></div>
+        `;
+        document.body.appendChild(hud);
+
+        const bar = document.getElementById('demetri-hud-drag');
+        let ox, oy, dragging = false;
+        bar.addEventListener('mousedown', e => { dragging = true; ox = e.clientX - hud.offsetLeft; oy = e.clientY - hud.offsetTop; bar.style.cursor = 'grabbing'; });
+        document.addEventListener('mousemove', e => { if (dragging) { hud.style.left = (e.clientX - ox) + 'px'; hud.style.top = (e.clientY - oy) + 'px'; hud.style.right = 'auto'; } });
+        document.addEventListener('mouseup', () => { dragging = false; bar.style.cursor = 'grab'; });
+
+        document.getElementById('demetri-hud-close').addEventListener('click', () => hud.remove());
+    },
+
     getSettingsHtml(config) {
-        return `<div id="demetri-hud" style="font-family: sans-serif; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #444; border-radius: 5px;">${this._getHudContent()}</div>`;
+        this._injectFloatingHud();
+        this.updateHud(_hudState, config);
+        return `<div style="color:#aaa; font-size:0.85em; padding:8px;">Demetri HUD is floating on screen.</div>`;
     },
 
     updateHud(state, config) {
