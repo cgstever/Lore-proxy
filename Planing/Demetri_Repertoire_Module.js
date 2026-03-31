@@ -37,20 +37,24 @@ function detectPendingForm(messages, knownForms) {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.7.0',
+    version: '1.8.0',
 
-    init(data) { 
+    init(data) {
         return {
             activeForms: ["Demetri"],
             madisonManifested: false,
             masteredForms: Object.keys(forms),
             turn: 0,
-        }; 
+            formScenes: {},       // { "Meru": [{ fromTurn, toTurn, beats: [] }], ... }
+            _activeSince: {},     // { "Meru": turnNumber } — tracks when current activation started
+        };
     },
 
     processTurn({ state, systemText, messages, charNameHint, personaName } = {}) {
         if (!state || !Array.isArray(state.activeForms)) state = this.init();
         if (!Array.isArray(state.masteredForms)) state.masteredForms = Object.keys(forms);
+        if (!state.formScenes) state.formScenes = {};
+        if (!state._activeSince) state._activeSince = {};
 
         // Increment turn counter
         state = { ...state, turn: (state.turn || 0) + 1 };
@@ -92,12 +96,39 @@ export default {
             }
         }
 
+        // Form memory — inject scene history for active forms that have prior activations
+        for (const form of state.activeForms) {
+            if (form === "Demetri" || !state.formScenes[form]) continue;
+            const scenes = state.formScenes[form];
+            // Only show completed activations (ones with toTurn set), last 3
+            const completed = scenes.filter(s => s.toTurn);
+            if (completed.length === 0) continue;
+            const recent = completed.slice(-3);
+            header += `\n--- ${form}: PRIOR SCENE MEMORY ---\n`;
+            for (const scene of recent) {
+                header += `[Turns ${scene.fromTurn}-${scene.toTurn}] ${scene.beats.join(' | ')}\n`;
+            }
+        }
+
         // Incoming form (lookahead — fired on the same turn as the trigger)
         if (hasPendingChange) {
             header += `\n=== INCOMING FORM (THIS TURN) ===\n`;
             header += `Demetri is triggering a transformation into ${pendingForm} right now.\n`;
             header += `Use the description below to write this transformation and all behavior from this point forward.\n`;
             header += `\n--- FORM: ${pendingForm} ---\n${forms[pendingForm]}\n`;
+
+            // Inject prior scene memory for the incoming form
+            if (state.formScenes[pendingForm]) {
+                const completed = state.formScenes[pendingForm].filter(s => s.toTurn);
+                if (completed.length > 0) {
+                    const recent = completed.slice(-3);
+                    header += `\n--- ${pendingForm}: PRIOR SCENE MEMORY ---\n`;
+                    header += `This form has been active before. Here is what happened:\n`;
+                    for (const scene of recent) {
+                        header += `[Turns ${scene.fromTurn}-${scene.toTurn}] ${scene.beats.join(' | ')}\n`;
+                    }
+                }
+            }
         }
 
         // Instructions — event format only, no drift rules (engine handles description authority)
@@ -124,8 +155,30 @@ Mastered Forms: ${state.masteredForms.join(", ")}
 
     handleResponse({ assistantText, state } = {}) {
         if (!state) state = this.init();
+        if (!state.formScenes) state.formScenes = {};
+        if (!state._activeSince) state._activeSince = {};
         let cleanedText = assistantText || '';
         const events = [];
+
+        // Record a beat for each active non-Demetri form
+        const beatText = (assistantText || '').replace(/```game[\s\S]*?```/g, '').trim();
+        if (beatText) {
+            const beat = beatText.length > 150 ? beatText.substring(0, 147) + '...' : beatText;
+            for (const form of state.activeForms) {
+                if (form === "Demetri") continue;
+                if (!state.formScenes[form]) state.formScenes[form] = [];
+                // Find or create current activation record
+                const scenes = state.formScenes[form];
+                let current = scenes[scenes.length - 1];
+                if (!current || current.toTurn) {
+                    // No open activation — create one
+                    current = { fromTurn: state.turn || 1, toTurn: null, beats: [] };
+                    scenes.push(current);
+                    state._activeSince[form] = state.turn || 1;
+                }
+                current.beats.push(beat);
+            }
+        }
 
         // Primary regex: well-formed ```game { ... } ```
         const regex = /\`\`\`game\s*({[\s\S]*?})\s*\`\`\`/g;
@@ -171,6 +224,17 @@ Mastered Forms: ${state.masteredForms.join(", ")}
 
         for (const event of events) {
             if (event.type === "change_form" && Array.isArray(event.forms) && event.forms.length > 0) {
+                // Close out scene activations for outgoing forms
+                for (const oldForm of state.activeForms) {
+                    if (oldForm === "Demetri") continue;
+                    if (!event.forms.includes(oldForm) && state.formScenes[oldForm]) {
+                        const scenes = state.formScenes[oldForm];
+                        const current = scenes[scenes.length - 1];
+                        if (current && !current.toTurn) {
+                            current.toTurn = state.turn || 1;
+                        }
+                    }
+                }
                 state.activeForms = event.forms;
             } else if (event.type === "manifest_madison") {
                 state.madisonManifested = !!event.manifested;
