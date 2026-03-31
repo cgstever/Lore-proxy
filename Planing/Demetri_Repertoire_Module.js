@@ -25,6 +25,9 @@ function detectPendingForm(messages, knownForms) {
 
     const text = lastUser.content.toLowerCase();
 
+    // Check for revert to Demetri (base form)
+    if (text.includes('demetri')) return 'Demetri';
+
     // Check each known form name (longest first to avoid partial matches on shorter names)
     const sorted = [...knownForms].sort((a, b) => b.length - a.length);
     for (const form of sorted) {
@@ -37,7 +40,7 @@ function detectPendingForm(messages, knownForms) {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.8.0',
+    version: '2.0.0',
 
     init(data) {
         return {
@@ -66,6 +69,20 @@ export default {
         // A pending form is only meaningful if it isn't already the sole active form
         const isAlreadyActive = state.activeForms.length === 1 && state.activeForms[0] === pendingForm;
         const hasPendingChange = pendingForm && !isAlreadyActive;
+
+        // --- Apply form change immediately — the module is the authority, not the model ---
+        if (hasPendingChange) {
+            // Close scene activations for outgoing forms
+            for (const oldForm of state.activeForms) {
+                if (oldForm === "Demetri") continue;
+                if (state.formScenes?.[oldForm]) {
+                    const scenes = state.formScenes[oldForm];
+                    const current = scenes[scenes.length - 1];
+                    if (current && !current.toTurn) current.toTurn = state.turn;
+                }
+            }
+            state.activeForms = [pendingForm];
+        }
 
         // --- Build header ---
         let header = `[STATEFUL LORE MODULE: DEMETRI REPERTOIRE — Turn ${state.turn}]\n\n`;
@@ -110,42 +127,20 @@ export default {
             }
         }
 
-        // Incoming form (lookahead — fired on the same turn as the trigger)
-        if (hasPendingChange) {
-            header += `\n=== INCOMING FORM (THIS TURN) ===\n`;
-            header += `Demetri is triggering a transformation into ${pendingForm} right now.\n`;
-            header += `Use the description below to write this transformation and all behavior from this point forward.\n`;
-            header += `\n--- FORM: ${pendingForm} ---\n${forms[pendingForm]}\n`;
-
-            // Inject prior scene memory for the incoming form
-            if (state.formScenes[pendingForm]) {
-                const completed = state.formScenes[pendingForm].filter(s => s.toTurn);
-                if (completed.length > 0) {
-                    const recent = completed.slice(-3);
-                    header += `\n--- ${pendingForm}: PRIOR SCENE MEMORY ---\n`;
-                    header += `This form has been active before. Here is what happened:\n`;
-                    for (const scene of recent) {
-                        header += `[Turns ${scene.fromTurn}-${scene.toTurn}] ${scene.beats.join(' | ')}\n`;
-                    }
-                }
-            }
-        }
-
-        // Instructions — event format only, no drift rules (engine handles description authority)
+        // Instructions — events for madison/learn only, form changes are handled by the module
         header += `\n=== EVENTS ===
-Embed JSON events when Demetri changes forms, splits, manifests Madison, or learns a new form.
+Embed JSON events for Madison manifestation or learning new forms.
 Format: \`\`\`game { "type": "event_type", ... } \`\`\`
 
-1. Change Form: \`\`\`game { "type": "change_form", "forms": ["Juri Han"] } \`\`\` (array; split = two names; revert = ["Demetri"])
-2. Manifest Madison: \`\`\`game { "type": "manifest_madison", "manifested": true } \`\`\` (false to un-manifest)
-3. Learn Form: \`\`\`game { "type": "learn_form", "form": "New Character Name" } \`\`\`
+1. Manifest Madison: \`\`\`game { "type": "manifest_madison", "manifested": true } \`\`\` (false to un-manifest)
+2. Learn Form: \`\`\`game { "type": "learn_form", "form": "New Character Name" } \`\`\`
 
 Mastered Forms: ${state.masteredForms.join(", ")}
 `;
 
         // --- Brief: lean per-turn active directive ---
         const activeBrief = hasPendingChange
-            ? `Demetri is transforming into ${pendingForm} this turn. Embody ${pendingForm} completely using the description in the header. Emit a change_form event.`
+            ? `Demetri is transforming into ${pendingForm} THIS TURN. Write the full transformation scene. Use the ${pendingForm} description above as reference for every physical detail.`
             : state.activeForms[0] !== "Demetri"
                 ? `Demetri is currently ${state.activeForms.join(" + ")}. Maintain their exact appearance and personality as described in the header.`
                 : null;
@@ -223,20 +218,10 @@ Mastered Forms: ${state.masteredForms.join(", ")}
         cleanedText = cleanedText.replace(/\`\`\`game[\s\S]*?\`\`\`/g, '');
 
         for (const event of events) {
-            if (event.type === "change_form" && Array.isArray(event.forms) && event.forms.length > 0) {
-                // Close out scene activations for outgoing forms
-                for (const oldForm of state.activeForms) {
-                    if (oldForm === "Demetri") continue;
-                    if (!event.forms.includes(oldForm) && state.formScenes[oldForm]) {
-                        const scenes = state.formScenes[oldForm];
-                        const current = scenes[scenes.length - 1];
-                        if (current && !current.toTurn) {
-                            current.toTurn = state.turn || 1;
-                        }
-                    }
-                }
-                state.activeForms = event.forms;
-            } else if (event.type === "manifest_madison") {
+            // change_form events are ignored — the module applies form changes
+            // directly in processTurn via the message scanner. Game blocks are
+            // still stripped from visible text above.
+            if (event.type === "manifest_madison") {
                 state.madisonManifested = !!event.manifested;
             } else if (event.type === "learn_form" && event.form) {
                 if (!state.masteredForms.includes(event.form)) {
