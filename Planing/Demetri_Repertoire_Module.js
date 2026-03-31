@@ -49,7 +49,8 @@ export default {
     },
 
     processTurn({ state, systemText, messages, charNameHint, personaName } = {}) {
-        if (!state || !state.activeForms) state = this.init();
+        if (!state || !Array.isArray(state.activeForms)) state = this.init();
+        if (!Array.isArray(state.masteredForms)) state.masteredForms = Object.keys(forms);
 
         // Increment turn counter
         state = { ...state, turn: (state.turn || 0) + 1 };
@@ -99,19 +100,16 @@ export default {
             header += `\n--- FORM: ${pendingForm} ---\n${forms[pendingForm]}\n`;
         }
 
-        // Instructions
-        header += `\n=== INSTRUCTIONS FOR THE AI ===
-IMPORTANT: The physical descriptions above are AUTHORITATIVE. Always use the exact appearance details specified in the active form's description (skin color, hair, eyes, body type, clothing). NEVER substitute details from prior chat messages or training data — this module's descriptions override everything else.
+        // Instructions — event format only, no drift rules (engine handles description authority)
+        header += `\n=== EVENTS ===
+Embed JSON events when Demetri changes forms, splits, manifests Madison, or learns a new form.
+Format: \`\`\`game { "type": "event_type", ... } \`\`\`
 
-The model should embed JSON events in its responses when Demetri changes forms, splits, manifests Madison, or learns a new form.
-Use this exact format: \`\`\`game { "type": "event_type", "value": ... } \`\`\`
-
-Supported events:
-1. Change Form: \`\`\`game { "type": "change_form", "forms": ["Juri Han"] } \`\`\` (Use an array of form names. If he splits, put two names: ["Juri Han", "Chun-Li"]. To return to normal: ["Demetri"])
-2. Manifest Madison: \`\`\`game { "type": "manifest_madison", "manifested": true } \`\`\` (Set false if she un-manifests)
+1. Change Form: \`\`\`game { "type": "change_form", "forms": ["Juri Han"] } \`\`\` (array; split = two names; revert = ["Demetri"])
+2. Manifest Madison: \`\`\`game { "type": "manifest_madison", "manifested": true } \`\`\` (false to un-manifest)
 3. Learn Form: \`\`\`game { "type": "learn_form", "form": "New Character Name" } \`\`\`
 
-Mastered Forms available: ${state.masteredForms.join(", ")}
+Mastered Forms: ${state.masteredForms.join(", ")}
 `;
 
         // --- Brief: lean per-turn active directive ---
@@ -153,7 +151,7 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
             return ""; // Always strip, regardless of parse success
         });
 
-        // Fallback: catch game blocks the primary regex missed
+        // Fallback: catch game blocks with JSON the primary regex missed
         cleanedText = cleanedText.replace(/\`\`\`game\s*({[\s\S]*?)(?:\`\`\`|$)/g, (match, innerJson) => {
             try {
                 let fixed = innerJson.trim();
@@ -168,8 +166,11 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
             return ""; // Always strip
         });
 
+        // Final catch-all: strip any remaining ```game ... ``` blocks (completely garbled, no JSON)
+        cleanedText = cleanedText.replace(/\`\`\`game[\s\S]*?\`\`\`/g, '');
+
         for (const event of events) {
-            if (event.type === "change_form" && Array.isArray(event.forms)) {
+            if (event.type === "change_form" && Array.isArray(event.forms) && event.forms.length > 0) {
                 state.activeForms = event.forms;
             } else if (event.type === "manifest_madison") {
                 state.madisonManifested = !!event.manifested;
