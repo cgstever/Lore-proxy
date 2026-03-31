@@ -16,44 +16,90 @@ const forms = {
     "Android 21 (Vomi Disguise)": "Android 21 (Vomi Disguise) is the human-like form adopted by the bio-android Android 21 to conceal her true nature. In this guise, she takes on the appearance and mannerisms of her human template, Dr. Vomi, blending seamlessly into human society while hiding her monstrous hunger and destructive impulses.\n\n**Appearance:**\n- Appears as a beautiful human woman in her mid-30s.\n- Long, flowing brown hair with bangs and a soft, natural shine.\n- Blue eyes behind glasses, giving her a scholarly and approachable look.\n- Wears a white lab coat over a professional blouse and skirt ensemble, often with heels.\n- Maintains a curvy, voluptuous figure, though less exaggerated than her true form.\n\n**Personality:**\n- Warm, intelligent, and approachable on the surface, embodying the persona of a kind scientist.\n- Can act motherly or nurturing, disarming others with her gentle demeanor.\n- Beneath the disguise, her evil nature simmers—sadistic, manipulative, and always calculating.\n- Uses her \"Vomi\" persona to lure in victims or to avoid suspicion until she chooses to reveal her true self.\n\n**Abilities:**\n- Retains all of Android 21's abilities (energy manipulation, Transfiguration Beam, regeneration, etc.) but typically refrains from using them openly while disguised.\n- Expert in scientific knowledge, especially genetics and bioengineering.\n- Can seamlessly shift between her disguise and true form at will.\n\n**Behavioral Notes:**\n- Often plays the role of a mentor, doctor, or caretaker to gain trust.\n- Uses her disguise to infiltrate groups, manipulate situations, and set up prey.\n- The contrast between her warm exterior and sadistic true self makes her reveals especially terrifying.\n\n**Repertoire Rules:**\n- When Demetri mimics Android 21 (Vomi Disguise), he must embody her dual-layered personality: outwardly warm, intelligent, and approachable, but secretly manipulative and sadistic.\n- He gains her human disguise appearance and mannerisms while retaining her hidden bio-android abilities.\n- He must balance the nurturing scientist persona with the lurking hunger and cruelty beneath the surface, switching between them as the situation demands."
 };
 
+// Scan the last user message for a known form name.
+// Returns the matched form name string, or null if none found.
+function detectPendingForm(messages, knownForms) {
+    // Get the last user message
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    if (!lastUser || !lastUser.content) return null;
+
+    const text = lastUser.content.toLowerCase();
+
+    // Check each known form name (longest first to avoid partial matches on shorter names)
+    const sorted = [...knownForms].sort((a, b) => b.length - a.length);
+    for (const form of sorted) {
+        if (text.includes(form.toLowerCase())) {
+            return form;
+        }
+    }
+    return null;
+}
+
 export default {
     name: 'Demetri Repertoire',
-    version: '1.0.5',
+    version: '1.1.0',
 
     init(data) { 
         return {
             activeForms: ["Demetri"],
             madisonManifested: false,
-            masteredForms: Object.keys(forms)
+            masteredForms: Object.keys(forms),
+            turn: 0,
         }; 
     },
 
     processTurn({ state, systemText, messages, charNameHint, personaName } = {}) {
         if (!state || !state.activeForms) state = this.init();
 
-        let header = `[STATEFUL LORE MODULE: DEMETRI REPERTOIRE]\n\n`;
-        
-        header += `${staticLore["The Method"]}\n\n`;
-        
+        // Increment turn counter
+        state = { ...state, turn: (state.turn || 0) + 1 };
+
+        // --- Message scanner: detect incoming form change this turn ---
+        const allKnownForms = Object.keys(forms);
+        const pendingForm = detectPendingForm(messages || [], allKnownForms);
+
+        // A pending form is only meaningful if it isn't already the sole active form
+        const isAlreadyActive = state.activeForms.length === 1 && state.activeForms[0] === pendingForm;
+        const hasPendingChange = pendingForm && !isAlreadyActive;
+
+        // --- Build header ---
+        let header = `[STATEFUL LORE MODULE: DEMETRI REPERTOIRE — Turn ${state.turn}]\n\n`;
+
+        // The Method (condensed after turn 1)
+        if (state.turn === 1) {
+            header += `${staticLore["The Method"]}\n\n`;
+        } else {
+            header += `THE METHOD: Autonomous mimicry force. Enforces perfect fidelity to whatever form Demetri assumes — personality, speech, mannerisms, appearance. Cannot be overridden by will alone.\n\n`;
+        }
+
+        // Madison
         if (state.madisonManifested) {
             header += `=== MADISON (MANIFESTED) ===\n${staticLore["Madison"]}\n\n`;
         } else {
-            header += `Madison is currently NOT manifested physically, but exists as a voice in Demetri's head.\n\n`;
+            header += `Madison: NOT manifested physically — exists as a voice in Demetri's head.\n\n`;
         }
 
+        // Active forms (current state)
         header += `=== ACTIVE FORMS ===\n`;
-        header += `Currently, Demetri is embodying the following form(s): ${state.activeForms.join(", ")}.\n`;
-        
+        header += `Currently, Demetri is embodying: ${state.activeForms.join(", ")}.\n`;
         if (state.activeForms.length > 1) {
-            header += `(He has used Binary Fission to split his body into two separate entities, each taking on one of these forms.)\n`;
+            header += `(Binary Fission is active — he has split into two separate entities.)\n`;
         }
-
         for (const form of state.activeForms) {
             if (form !== "Demetri" && forms[form]) {
                 header += `\n--- FORM: ${form} ---\n${forms[form]}\n`;
             }
         }
 
+        // Incoming form (lookahead — fired on the same turn as the trigger)
+        if (hasPendingChange) {
+            header += `\n=== INCOMING FORM (THIS TURN) ===\n`;
+            header += `Demetri is triggering a transformation into ${pendingForm} right now.\n`;
+            header += `Use the description below to write this transformation and all behavior from this point forward.\n`;
+            header += `\n--- FORM: ${pendingForm} ---\n${forms[pendingForm]}\n`;
+        }
+
+        // Instructions
         header += `\n=== INSTRUCTIONS FOR THE AI ===
 IMPORTANT: The physical descriptions above are AUTHORITATIVE. Always use the exact appearance details specified in the active form's description (skin color, hair, eyes, body type, clothing). NEVER substitute details from prior chat messages or training data — this module's descriptions override everything else.
 
@@ -68,7 +114,14 @@ Supported events:
 Mastered Forms available: ${state.masteredForms.join(", ")}
 `;
 
-        return { header, state };
+        // --- Brief: lean per-turn active directive ---
+        const activeBrief = hasPendingChange
+            ? `Demetri is transforming into ${pendingForm} this turn. Embody ${pendingForm} completely using the description in the header. Emit a change_form event.`
+            : state.activeForms[0] !== "Demetri"
+                ? `Demetri is currently ${state.activeForms.join(" + ")}. Maintain their exact appearance and personality as described in the header.`
+                : null;
+
+        return { header, brief: activeBrief, state };
     },
 
     handleResponse({ assistantText, state } = {}) {
@@ -101,7 +154,6 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
         });
 
         // Fallback: catch game blocks the primary regex missed
-        // (e.g. missing closing brace, missing closing backticks)
         cleanedText = cleanedText.replace(/\`\`\`game\s*({[\s\S]*?)(?:\`\`\`|$)/g, (match, innerJson) => {
             try {
                 let fixed = innerJson.trim();
@@ -144,6 +196,7 @@ Mastered Forms available: ${state.masteredForms.join(", ")}
                 <div style="color: #fff; font-size: 1.1em; font-weight: bold; margin-top: 2px;">${activeForms.join(" + ")}</div>
             </div>
             <p style="margin: 4px 0;"><strong>Madison:</strong> ${madisonManifested ? "✅ Manifested" : "💭 Voice only"}</p>
+            <p style="margin: 4px 0;"><strong>Turn:</strong> ${state.turn || 0}</p>
             <details>
                 <summary><strong>Mastered Forms (${masteredForms.length})</strong></summary>
                 <ul style="margin: 5px 0 0 20px; padding: 0;">
