@@ -37,7 +37,7 @@ function detectPendingForm(messages, knownForms) {
 
 export default {
     name: 'Demetri Repertoire',
-    version: '1.1.0',
+    version: '1.6.0',
 
     init(data) { 
         return {
