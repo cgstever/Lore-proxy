@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.6.2",
+  "version": "7.7.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7548,15 +7548,43 @@ registerBimboPsyche(engine);
 registerEffectResistance(engine);
 registerMasculinity(engine);
 
-function runTurn(realState, lastUserText, lastAssistantText) {
-  // v7.6.1 — shadow mode. Rebuild operates on a deep clone of state so its
-  // counter increments / state writes don't double-count alongside legacy.
-  // The shadow is attached at realState._xrebuild for inspection/comparison.
-  // Once per-module authority flips happen in v7.6.2+, the legacy paths get
-  // disabled and the rebuild's shadow becomes the real state per module.
+// v7.7.0 — fields the rebuild owns. After eval, these get copied from shadow
+// back to realState. Legacy's writes to these fields are overwritten.
+const REBUILD_OWNED_FIELDS = [
+  'active_pill', 'active_effects', 'effect_resistance', '_effect_low_water',
+  'form', '_pending_body_modifier',
+  'pregnancy', '_conception_turn', 'pregnancies_completed',
+  'session_orgasm_count', 'session_fail_count', 'active_side_effects',
+  '_hair_trigger_active', '_two_in_chamber_active', '_two_in_chamber_chain',
+  '_side_fx_arousal_floor_bonus',
+  '_orgasm_count', 'total_orgasm_count', 'sessions_completed', 'arousal',
+  '_breeder_orgasm_count', '_breeder_dc_current', '_breeder_compulsion', '_denial_frustration',
+  '_surrogate_post_birth_turns', '_surrogate_arousal_floor',
+  'masculinity', '_bimbo_stage', '_psyche_stage',
+  '_arousal_gate_dc',
+  '_extra_fertile_active', '_extra_fertile_bonus',
+  '_excitable_ovaries_active', '_excitable_ovaries_bonus',
+  '_confirmed_submissive_active',
+  '_effect_resist_fail_count', '_effect_resist_streak_count',
+  '_effect_resist_streak_bonus', '_effect_resist_dc',
+];
+const REBUILD_OWNED_FLAGS = [
+  'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
+  '_surrogate_pre_erode_done', '_preconception_breeder_resistance',
+  'breeder_resistance_locked',
+  'bimbo_permanent', 'psyche_permanent',
+  '_breeder_broken', '_bimbo_broken', '_surrogate_broken', '_compliant_broken',
+  '_submissive_broken', '_bull_broken', '_denial_broken',
+  'statgen_done',
+];
+
+function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
+  // v7.7.0 — authoritative mode. If preSnapshot provided, evaluate from that
+  // pre-legacy state so rebuild's outputs aren't compounded with legacy's.
+  // After eval, copy rebuild-owned fields back to realState — rebuild wins.
   let shadow;
   try {
-    shadow = JSON.parse(JSON.stringify(realState || {}));
+    shadow = JSON.parse(JSON.stringify(preSnapshot || realState || {}));
   } catch (cloneErr) {
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[XR] state clone failed, skipping turn:', cloneErr && cloneErr.message);
@@ -7578,8 +7606,28 @@ function runTurn(realState, lastUserText, lastAssistantText) {
   detectPregnancyStageLate(text, engine);
   detectBirth(text, engine);
   engine.evaluate(shadow);
-  // Attach the shadow as observation. Real state is untouched — no double-count.
+  // v7.7.0 — copy rebuild-owned fields from shadow back to realState. Rebuild
+  // is now authoritative for these fields; legacy mutations are overwritten.
   if (realState && typeof realState === 'object') {
+    for (let i = 0; i < REBUILD_OWNED_FIELDS.length; i++) {
+      const f = REBUILD_OWNED_FIELDS[i];
+      if (Object.prototype.hasOwnProperty.call(shadow, f)) {
+        realState[f] = shadow[f];
+      } else {
+        delete realState[f];
+      }
+    }
+    // Flags: deep-merge rebuild-owned keys into realState.flags
+    if (!realState.flags) realState.flags = {};
+    const sFlags = shadow.flags || {};
+    for (let i = 0; i < REBUILD_OWNED_FLAGS.length; i++) {
+      const k = REBUILD_OWNED_FLAGS[i];
+      if (Object.prototype.hasOwnProperty.call(sFlags, k)) {
+        realState.flags[k] = sFlags[k];
+      } else {
+        delete realState.flags[k];
+      }
+    }
     realState._xrebuild = shadow;
   }
   // v7.6.2 — mechanic-grouped logging. Each line shows what one mechanic did.
@@ -16132,6 +16180,12 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     ' recentForIntake=' + recentForIntake.length + 'msgs' +
     ' lastRole=' + (recentForIntake.length > 0 ? recentForIntake[recentForIntake.length - 1].role : 'n/a'));
 
+  // v7.7.0 — Snapshot state BEFORE legacy event processing. Rebuild evaluates
+  // from this clean snapshot so its outputs aren't compounded with legacy's
+  // mutations. Used by the integration hook below.
+  let _xrPreSnapshot = null;
+  try { _xrPreSnapshot = JSON.parse(JSON.stringify(state || {})); } catch (e) { _xrPreSnapshot = null; }
+
   const events = detectEvents(recentForIntake, state, sex, rs, false, personaState);
 
   if (events.pill_taken) {
@@ -16139,26 +16193,28 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   }
 
   processEvents(state, events, sex, notes, rs, personaState?.active_effects, personaState);
+  checkSideEffects(state, events, rs, sex);
 
-  // === REBUILD INTEGRATION HOOK (v7.6.0, parallel-running for inspection) ===
-  // Runs the new rule-engine architecture against current state. Writes flags
-  // and effect-tracking fields onto state but legacy code remains authoritative
-  // for game-affecting outputs. Logs via [XR] prefix.
+  // === REBUILD AUTHORITATIVE HOOK (v7.7.0) ===
+  // Rebuild evaluates from the pre-legacy snapshot so its writes aren't
+  // compounded with legacy's. After eval, copy rebuild-owned fields from
+  // shadow back to realState — those fields become rebuild-authoritative.
+  // Legacy mutations to those fields are overwritten. Other fields (scene
+  // tracker, prompt-build artifacts, etc.) stay legacy-driven.
   try {
     const _xrLastUser = recentForIntake.filter(function (m) { return m.role === 'user'; }).slice(-1)[0];
     const _xrLastAsst = recentForIntake.filter(function (m) { return m.role === 'assistant'; }).slice(-1)[0];
     _xRebuildSystem.runTurn(
       state,
       _xrLastUser ? _xrLastUser.content : '',
-      _xrLastAsst ? _xrLastAsst.content : ''
+      _xrLastAsst ? _xrLastAsst.content : '',
+      _xrPreSnapshot
     );
   } catch (_xrErr) {
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[XR] runTurn error (non-fatal):', _xrErr && _xrErr.message ? _xrErr.message : _xrErr);
     }
   }
-
-  checkSideEffects(state, events, rs, sex);
 
   updatePersonaRelationship(personaState, name, events, state, rs);
 
