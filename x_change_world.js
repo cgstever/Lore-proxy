@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.6.1",
+  "version": "7.6.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7582,9 +7582,119 @@ function runTurn(realState, lastUserText, lastAssistantText) {
   if (realState && typeof realState === 'object') {
     realState._xrebuild = shadow;
   }
-  const fired = engine.getActiveFlags().filter(function (f) { return /(_this_turn|detected_)/.test(f); });
-  if (fired.length && typeof console !== 'undefined' && console.log) {
-    console.log('[XR turn ' + engine.getCurrentTurn() + '] flags:', fired.join(', '));
+  // v7.6.2 — mechanic-grouped logging. Each line shows what one mechanic did.
+  if (typeof console !== 'undefined' && console.log) {
+    const fired = engine.getActiveFlags();
+    const turn = engine.getCurrentTurn();
+    const has = function (f) { return fired.indexOf(f) >= 0; };
+    const lines = [];
+    // PILL
+    if (has('pill_taken_this_turn')) {
+      const color = engine.getFlagValue('pill_taken_this_turn');
+      let pillLine = 'PILL: ' + color + ' taken';
+      if (has('pill_invalid_for_gender'))      pillLine += ' [INVALID for birthSex — wasted]';
+      else if (has('pill_already_active_same_color')) pillLine += ' [SUPPRESSED — same color]';
+      else if (has('pill_just_transformed'))   pillLine += ' [TRANSFORMED]';
+      if (has('pill_persona_target_this_turn')) pillLine += ' (→ persona)';
+      lines.push(pillLine);
+    } else if (fired.some(function (f) { return f.indexOf('pill_pending') === 0; })) {
+      lines.push('PILL: pending=' + engine.getFlagValue('pill_pending') + ' (waiting for intake verb)');
+    }
+    // ANTIDOTE
+    if (has('detected_antidote_taken')) {
+      let line = 'ANTIDOTE:';
+      if (has('antidote_blocked_by_pregnancy')) line += ' BLOCKED (pregnancy lock)';
+      else if (has('antidote_applied_this_turn')) line += ' applied — pill+effects cleared';
+      if (has('antidote_persona_target_this_turn')) line += ' (→ persona)';
+      lines.push(line);
+    }
+    // CLIMAX / SESSION
+    if (has('detected_creampie_vaginal') || has('detected_male_orgasm_external') || has('detected_cum_swallowed') || has('session_ended_this_turn') || has('session_engaged_this_turn')) {
+      let parts = [];
+      if (has('detected_creampie_vaginal'))      parts.push('creampie_vaginal');
+      if (has('detected_male_orgasm_external')) parts.push('external_climax');
+      if (has('detected_cum_swallowed'))         parts.push('cum_swallowed');
+      if (has('session_engaged_this_turn'))      parts.push('session→engaged');
+      if (has('session_ended_this_turn'))        parts.push('session→ended');
+      lines.push('CLIMAX: ' + parts.join(', '));
+    }
+    // CHARACTER ORGASM
+    if (has('character_orgasm_this_turn')) {
+      let line = 'HER_ORGASM: counter→' + (shadow.session_orgasm_count || 0);
+      if (has('arousal_gate_attempt_this_turn')) line += ' (arousal-gate)';
+      if (has('breeder_orgasm_forced_this_turn')) line += ' (breeder force)';
+      line += ' arousal→' + (shadow.arousal != null ? shadow.arousal : '?');
+      lines.push(line);
+    }
+    // BREEDER
+    if (has('breeder_dc_reset_this_turn') || has('breeder_orgasm_forced_this_turn') || has('breeder_beg_check_this_turn')) {
+      let parts = [];
+      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→30');
+      if (has('breeder_orgasm_forced_this_turn')) parts.push('force_orgasm (count=' + (shadow._breeder_orgasm_count || 0) + ')');
+      if (has('breeder_beg_check_this_turn'))     parts.push('beg_path' + (has('breeder_beg_denied_this_turn') ? '→denied (frustration=' + (shadow._denial_frustration || 0) + ')' : '→composed'));
+      lines.push('BREEDER: ' + parts.join(', '));
+    }
+    // PREGNANCY
+    if (has('pregnancy_eligible_this_turn') || has('pregnancy_conceived_this_turn') || has('pregnancy_showing_this_turn') || has('pregnancy_late_this_turn') || has('pregnancy_delivered_this_turn')) {
+      let parts = [];
+      if (has('pregnancy_eligible_this_turn'))   parts.push('eligible');
+      if (has('pregnancy_conception_attempted')) parts.push('roll fired');
+      if (has('pregnancy_conceived_this_turn'))  parts.push('CONCEIVED (mode=' + (shadow.pregnancy && shadow.pregnancy.mode || '?') + ')');
+      if (has('pregnancy_showing_this_turn'))    parts.push('→showing');
+      if (has('pregnancy_late_this_turn'))       parts.push('→late');
+      if (has('pregnancy_delivered_this_turn'))  parts.push('DELIVERED (total=' + (shadow.pregnancies_completed || 0) + ')');
+      lines.push('PREGNANCY: ' + parts.join(', '));
+    }
+    // SURROGATE
+    if (has('surrogate_motherhood_snapshot_taken') || has('surrogate_pending_revert') || has('surrogate_revert_this_turn') || has('surrogate_breeder_lock_attempted')) {
+      let parts = [];
+      if (has('surrogate_motherhood_snapshot_taken')) parts.push('motherhood snapshot taken (R=' + ((shadow.flags && shadow.flags._preconception_breeder_resistance) || '?') + ')');
+      if (has('surrogate_pending_revert'))           parts.push('grace (' + (shadow._surrogate_post_birth_turns != null ? shadow._surrogate_post_birth_turns : '?') + ' turns left, floor=' + (shadow._surrogate_arousal_floor || '?') + ')');
+      if (has('surrogate_revert_this_turn'))         parts.push('REVERT — surrogate removed' + ((shadow.flags && shadow.flags.breeder_resistance_locked) ? ' + breeder R LOCKED' : ''));
+      lines.push('SURROGATE: ' + parts.join(', '));
+    }
+    // BIMBO / PSYCHE
+    if (has('bimbo_stage_advanced_this_turn')) {
+      lines.push('BIMBO: stage→' + (shadow._bimbo_stage || 0) + ((shadow.flags && shadow.flags.bimbo_permanent) ? ' [PERMANENT]' : ''));
+    }
+    if (has('psyche_stage_advanced_this_turn')) {
+      lines.push('PSYCHE: stage→' + (shadow._psyche_stage || 0) + ((shadow.flags && shadow.flags.psyche_permanent) ? ' [PERMANENT]' : ''));
+    }
+    // SIDE EFFECTS
+    if (has('side_fx_hair_trigger_acquired_this_turn') || has('side_fx_two_in_chamber_acquired_this_turn') || has('side_fx_confirmed_submissive_acquired_this_turn') || has('side_fx_extra_fertile_acquired_this_turn') || has('side_fx_excitable_ovaries_acquired_this_turn')) {
+      let acquired = [];
+      if (has('side_fx_hair_trigger_acquired_this_turn'))         acquired.push('Hair Trigger');
+      if (has('side_fx_two_in_chamber_acquired_this_turn'))       acquired.push('Two in Chamber');
+      if (has('side_fx_confirmed_submissive_acquired_this_turn')) acquired.push('Confirmed Submissive');
+      if (has('side_fx_extra_fertile_acquired_this_turn'))        acquired.push('Extra Fertile');
+      if (has('side_fx_excitable_ovaries_acquired_this_turn'))    acquired.push('Excitable Ovaries');
+      lines.push('SIDE_FX: acquired ' + acquired.join(' + '));
+    }
+    // EFFECT RESISTANCE
+    if (has('effect_resist_processed_this_turn') && shadow._effect_resist_dc) {
+      const rs = [];
+      for (const eff in shadow.effect_resistance || {}) {
+        const r = shadow.effect_resistance[eff];
+        const dc = (shadow._effect_resist_dc && shadow._effect_resist_dc[eff]) || '?';
+        const lw = (shadow._effect_low_water && shadow._effect_low_water[eff]) || r;
+        const broken = shadow.flags && shadow.flags['_' + eff + '_broken'];
+        rs.push(eff + '(R=' + r + ',low=' + lw + ',dc=' + dc + (broken ? ',BROKEN' : '') + ')');
+      }
+      if (rs.length) lines.push('RESIST: ' + rs.join(' '));
+    }
+    // MASCULINITY
+    if (has('masculinity_delta_applied_this_turn')) {
+      lines.push('MASC: shadow=' + (shadow.masculinity != null ? shadow.masculinity : '?'));
+    }
+    // EFFECTS list (descriptor activations)
+    if (fired.some(function (f) { return f === 'pill_taken_this_turn'; }) && shadow.active_effects && shadow.active_effects.length) {
+      lines.push('EFFECTS: [' + shadow.active_effects.join(', ') + ']');
+    }
+    // Output
+    if (lines.length) {
+      console.log('[XR t' + turn + ']');
+      for (let i = 0; i < lines.length; i++) console.log('  ' + lines[i]);
+    }
   }
 }
 
