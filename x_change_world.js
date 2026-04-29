@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.6.0",
+  "version": "7.6.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7548,7 +7548,21 @@ registerBimboPsyche(engine);
 registerEffectResistance(engine);
 registerMasculinity(engine);
 
-function runTurn(state, lastUserText, lastAssistantText) {
+function runTurn(realState, lastUserText, lastAssistantText) {
+  // v7.6.1 — shadow mode. Rebuild operates on a deep clone of state so its
+  // counter increments / state writes don't double-count alongside legacy.
+  // The shadow is attached at realState._xrebuild for inspection/comparison.
+  // Once per-module authority flips happen in v7.6.2+, the legacy paths get
+  // disabled and the rebuild's shadow becomes the real state per module.
+  let shadow;
+  try {
+    shadow = JSON.parse(JSON.stringify(realState || {}));
+  } catch (cloneErr) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[XR] state clone failed, skipping turn:', cloneErr && cloneErr.message);
+    }
+    return;
+  }
   engine.tick();
   const text = (lastUserText || '') + '\n' + (lastAssistantText || '');
   detectPillColor(text, engine);
@@ -7563,8 +7577,12 @@ function runTurn(state, lastUserText, lastAssistantText) {
   detectPregnancyStageShowing(text, engine);
   detectPregnancyStageLate(text, engine);
   detectBirth(text, engine);
-  engine.evaluate(state);
-  const fired = engine.getActiveFlags().filter(f => /(_this_turn|detected_)/.test(f));
+  engine.evaluate(shadow);
+  // Attach the shadow as observation. Real state is untouched — no double-count.
+  if (realState && typeof realState === 'object') {
+    realState._xrebuild = shadow;
+  }
+  const fired = engine.getActiveFlags().filter(function (f) { return /(_this_turn|detected_)/.test(f); });
   if (fired.length && typeof console !== 'undefined' && console.log) {
     console.log('[XR turn ' + engine.getCurrentTurn() + '] flags:', fired.join(', '));
   }
