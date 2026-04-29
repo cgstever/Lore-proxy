@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.5.14",
+  "version": "7.6.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6567,6 +6567,1020 @@ const D6_STAT_MAP = {1:'CON', 2:'INT', 3:'WIS', 4:'CHA', 5:'DOM', 6:'SUB'};
 const _D12_FACES_BY_RANK = {1:3, 2:2, 3:1, 4:1, 5:2, 6:3};
 const _STAT_CTX = {CON:'con_mod', INT:'int_mod', WIS:'wis_mod', CHA:'cha_mod', DOM:'dom_mod', SUB:'sub_mod'};
 const _STAT_GROUP = {INT:'portrait_mind', WIS:'portrait_mind', CHA:'portrait_presence', CON:'portrait_presence', DOM:'portrait_power', SUB:'portrait_power'};
+
+
+// ─── REBUILD INTEGRATION (v7.6.0) ──────────────────────────────────────
+// =====================================================================
+// X-CHANGE WORLD — REBUILD INTEGRATION (v7.6.0, shadow-mode first cut)
+// =====================================================================
+// Inlined from engine_rebuild/rule_engine/* — hybrid rule engine + named
+// handlers + FSMs. Runs in shadow mode: maintains its own _xRebuildState
+// container (not the legacy state object), logs trigger fires via
+// console.log('[XR] ...') for inspection. Legacy engine remains
+// authoritative for game-affecting state until per-module authority flips.
+//
+// Source of truth for module logic is engine_rebuild/rule_engine/*.js
+// in the local working tree. Tests there (306 passing) prove correctness;
+// this bundle is the same code re-flattened into a single IIFE for
+// browser-compatible single-file deployment.
+
+const _xRebuildSystem = (function () {
+'use strict';
+
+// ────────────────────────────────────────────────────────────────────
+// Framework: createRuleEngine
+// ────────────────────────────────────────────────────────────────────
+
+function createRuleEngine(opts) {
+  opts = opts || {};
+  const maxIterations = opts.maxIterations || 100;
+  const allowUnregisteredFlags = opts.allowUnregisteredFlags !== false;
+  const debug = !!opts.debug;
+  const flagDefs = new Map();
+  const flags = new Map();
+  const rules = [];
+  const ruleIndex = new Map();
+  const handlers = new Map();
+  const eventLog = [];
+  let currentTurn = 0;
+  flagDefs.set('turn_start', { type: 'turn_based_reset', ttl: 1 });
+
+  function registerFlag(name, def) {
+    if (typeof name !== 'string' || !name) throw new Error('Flag name required');
+    if (flagDefs.has(name)) throw new Error('Flag already registered: ' + name);
+    if (!def || !['indefinite', 'triggered_reset', 'turn_based_reset'].includes(def.type)) {
+      throw new Error('Invalid flag def: ' + name);
+    }
+    if (def.type === 'turn_based_reset' && (typeof def.ttl !== 'number' || def.ttl < 1)) {
+      throw new Error('turn_based_reset needs positive ttl: ' + name);
+    }
+    if (def.type === 'triggered_reset' && !def.clearedBy) {
+      throw new Error('triggered_reset needs clearedBy: ' + name);
+    }
+    flagDefs.set(name, def);
+  }
+
+  function registerRule(rule) {
+    if (!rule || !rule.name) throw new Error('Rule needs name');
+    if (rules.find(r => r.name === rule.name)) throw new Error('Rule duplicate: ' + rule.name);
+    const r = {
+      name: rule.name,
+      requires: rule.requires || [],
+      requires_not: rule.requires_not || [],
+      actions: rule.actions || [],
+    };
+    rules.push(r);
+    for (const flag of r.requires) {
+      if (!ruleIndex.has(flag)) ruleIndex.set(flag, []);
+      ruleIndex.get(flag).push(r.name);
+    }
+  }
+
+  function registerHandler(name, fn) {
+    if (typeof name !== 'string' || !name) throw new Error('Handler name required');
+    if (handlers.has(name)) throw new Error('Handler duplicate: ' + name);
+    if (typeof fn !== 'function') throw new Error('Handler must be function');
+    handlers.set(name, fn);
+  }
+
+  function setFlag(name, options) {
+    options = options || {};
+    let def = flagDefs.get(name);
+    if (!def) {
+      if (!allowUnregisteredFlags) throw new Error('Flag not registered: ' + name);
+      def = { type: 'indefinite' };
+    }
+    const flag = { active: true };
+    if (def.type === 'turn_based_reset') {
+      const ttl = options.ttl != null ? options.ttl : def.ttl;
+      flag.expiresAtTurn = currentTurn + ttl;
+    }
+    if (options.value !== undefined) flag.value = options.value;
+    flags.set(name, flag);
+  }
+
+  function clearFlag(name) { if (flags.has(name)) flags.delete(name); }
+  function isFlagActive(name) { return flags.has(name) && flags.get(name).active; }
+  function getFlagValue(name) { return flags.has(name) ? flags.get(name).value : undefined; }
+  function getActiveFlags() { return Array.from(flags.keys()).filter(isFlagActive); }
+  function getCurrentTurn() { return currentTurn; }
+  function getEventLog() { return eventLog.slice(); }
+
+  function tick() {
+    currentTurn++;
+    for (const [name, flag] of Array.from(flags.entries())) {
+      if (flag.expiresAtTurn !== undefined && currentTurn >= flag.expiresAtTurn) {
+        flags.delete(name);
+      }
+    }
+    flags.set('turn_start', { active: true, expiresAtTurn: currentTurn + 1 });
+  }
+
+  function setStatePath(state, path, value) {
+    const parts = path.split('.');
+    let obj = state;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (obj[parts[i]] == null) obj[parts[i]] = {};
+      obj = obj[parts[i]];
+    }
+    if (value === undefined) delete obj[parts[parts.length - 1]];
+    else obj[parts[parts.length - 1]] = value;
+  }
+  function getStatePath(state, path) {
+    const parts = path.split('.');
+    let obj = state;
+    for (const p of parts) { if (obj == null) return undefined; obj = obj[p]; }
+    return obj;
+  }
+
+  function applyActions(actions, state) {
+    for (const action of actions) {
+      switch (action.type) {
+        case 'set_flag': setFlag(action.flag, action.options || {}); break;
+        case 'clear_flag': clearFlag(action.flag); break;
+        case 'set_value': setStatePath(state, action.path, action.value); break;
+        case 'clear_value': setStatePath(state, action.path, undefined); break;
+        case 'increment': setStatePath(state, action.path, (getStatePath(state, action.path) || 0) + (action.by || 1)); break;
+        case 'decrement': setStatePath(state, action.path, (getStatePath(state, action.path) || 0) - (action.by || 1)); break;
+        case 'array_push': {
+          const arr = (getStatePath(state, action.path) || []).slice();
+          if (!arr.includes(action.value)) arr.push(action.value);
+          setStatePath(state, action.path, arr);
+          break;
+        }
+        case 'array_remove': {
+          const arr = (getStatePath(state, action.path) || []).slice();
+          const idx = arr.indexOf(action.value);
+          if (idx >= 0) arr.splice(idx, 1);
+          setStatePath(state, action.path, arr);
+          break;
+        }
+        case 'log': eventLog.push({ turn: currentTurn, type: 'log', message: action.message }); break;
+        case 'call_handler': {
+          const fn = handlers.get(action.name);
+          if (!fn) throw new Error('Unknown handler: ' + action.name);
+          fn(state, action.ctx || {});
+          break;
+        }
+        default: throw new Error('Unknown action: ' + action.type);
+      }
+    }
+  }
+
+  function evaluate(state) {
+    state = state || {};
+    let iteration = 0;
+    let madeProgress = true;
+    const firedThisEval = new Set();
+    while (madeProgress && iteration < maxIterations) {
+      madeProgress = false;
+      iteration++;
+      const candidates = new Set();
+      for (const flagName of flags.keys()) {
+        const deps = ruleIndex.get(flagName) || [];
+        for (const rn of deps) if (!firedThisEval.has(rn)) candidates.add(rn);
+      }
+      for (const rule of rules) {
+        if (!candidates.has(rule.name)) continue;
+        if (firedThisEval.has(rule.name)) continue;
+        const reqsOk = rule.requires.every(isFlagActive);
+        const negsOk = rule.requires_not.every(f => !isFlagActive(f));
+        if (reqsOk && negsOk) {
+          applyActions(rule.actions, state);
+          firedThisEval.add(rule.name);
+          madeProgress = true;
+        }
+      }
+    }
+  }
+
+  return {
+    registerFlag, registerRule, registerHandler,
+    setFlag, clearFlag, isFlagActive, getFlagValue, getActiveFlags,
+    tick, getCurrentTurn, evaluate, getEventLog,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Utils: stats + arousal + tier
+// ────────────────────────────────────────────────────────────────────
+
+function statMod(s) { return s == null ? 0 : Math.floor((s - 10) / 2); }
+function getStat(st, n) { return (st.stats && st.stats[n] != null) ? st.stats[n] : 10; }
+function getStatMod(st, n) { return statMod(getStat(st, n)); }
+function characterTier(st) {
+  if (!st.stats) return 10;
+  const s = st.stats;
+  return Math.floor(((s.INT||10)+(s.WIS||10)+(s.DOM||10)+(s.SUB||10)+(s.CON||10)+(s.CHA||10)) / 4);
+}
+const AROUSAL_BANDS = [
+  {name:'cold',min:0,max:19,pressure:0},{name:'warm',min:20,max:39,pressure:3},
+  {name:'build',min:40,max:59,pressure:8},{name:'heat',min:60,max:74,pressure:12},
+  {name:'intense',min:75,max:84,pressure:18},{name:'over',min:85,max:94,pressure:24},
+  {name:'edge',min:95,max:100,pressure:30},
+];
+const ORG_ZONE = 80;
+function arousalBand(a) { a = a || 0; for (const b of AROUSAL_BANDS) if (a >= b.min && a <= b.max) return b; return AROUSAL_BANDS[0]; }
+function arousalPressure(a) { return arousalBand(a).pressure; }
+const EFFECT_DC_COUNTER_STAT = {bimbo:'CHA',breeder:'SUB',submissive:'SUB',compliant:'CHA',bull:'CHA',denial:'SUB',surrogate:'SUB',psyche:'CHA',pinup:'CHA'};
+function effectCounterStat(e) { return EFFECT_DC_COUNTER_STAT[e] || 'CHA'; }
+
+// ────────────────────────────────────────────────────────────────────
+// PILL_RULES (Module 01 data)
+// ────────────────────────────────────────────────────────────────────
+
+const PILL_COLORS = ['pink','blue','purple','green','red'];
+const PILL_NOUNS = ['pill','dose','tablet','capsule','xchange','x-change','liquid','drink','vial'];
+const INTAKE_VERBS = ['take','takes','took','taking','taken','swallow','swallows','swallowed','swallowing','pop','pops','popped','popping','gulp','gulps','gulped','gulping','chew','chews','chewed','chewing','consume','consumes','consumed','consuming','ingest','ingests','ingested','ingesting','dissolve','dissolves','dissolved','dissolving','drink','drinks','drank','drunk','drinking','sip','sips','sipped','sipping','chug','chugs','chugged','chugging'];
+const COVERT_VERBS = ['laced','spiked','slipped','drugged','dosed'];
+const DESCRIPTOR_EFFECTS = ['breeder','bimbo','pinup','denial','bull','compliant','submissive','psyche','surrogate'];
+const BODY_MODIFIERS = ['petite','athletic','curvy','voluptuous','average','slender'];
+const PILL_RULES = {
+  pink:   {form_sex:'female',genitals:'vagina_only',preg_eligible:true,no_form_change:false,valid_birthSex:'male',masculinity_sex:-3,masculinity_orgasm:-2},
+  blue:   {form_sex:'male',genitals:'penis_only',preg_eligible:false,no_form_change:false,valid_birthSex:'female',masculinity_sex:+3,masculinity_orgasm:-1},
+  purple: {form_sex:'female',genitals:'penis_only_no_vagina',preg_eligible:false,no_form_change:false,valid_birthSex:'female',masculinity_sex:+2,masculinity_orgasm:-1},
+  green:  {form_sex:'female',genitals:'vagina_only',preg_eligible:true,no_form_change:true,valid_birthSex:'female',masculinity_sex:0,masculinity_orgasm:-1},
+  red:    {form_sex:'male',genitals:'penis_only',preg_eligible:false,no_form_change:true,valid_birthSex:'male',masculinity_sex:0,masculinity_orgasm:-1},
+};
+
+// ────────────────────────────────────────────────────────────────────
+// Detection — all detectors, single text input (bias-bug fixed)
+// ────────────────────────────────────────────────────────────────────
+
+const PROXIMITY_CHARS = 40;
+function detectPillColor(text, engine) {
+  if (!text || typeof text !== 'string') return null;
+  const re = new RegExp('\\b('+PILL_COLORS.join('|')+')\\b[\\s\\S]{0,'+PROXIMITY_CHARS+'}\\b(?:'+PILL_NOUNS.join('|')+')\\b|\\b(?:'+PILL_NOUNS.join('|')+')\\b[\\s\\S]{0,'+PROXIMITY_CHARS+'}\\b('+PILL_COLORS.join('|')+')\\b','i');
+  const m = re.exec(text);
+  if (!m) return null;
+  const color = (m[1] || m[2]).toLowerCase();
+  engine.setFlag('pill_color_detected', { ttl: 1, value: color });
+  return color;
+}
+function detectPillIntakeVerb(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  const re = new RegExp('\\b(?:'+INTAKE_VERBS.join('|')+')\\b','i');
+  if (!re.test(text)) return false;
+  engine.setFlag('pill_intake_verb_seen', { ttl: 1 });
+  const fp = new RegExp("\\bI(?:'ll|'m|'ve| will| am| just| ?gonna)?\\s+(?:[a-z]+\\s+)?(?:"+INTAKE_VERBS.join('|')+")\\b",'i');
+  if (fp.test(text)) engine.setFlag('pill_intake_first_person', { ttl: 1 });
+  return true;
+}
+function detectPillCovertIntake(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  const re = new RegExp('\\b(?:'+COVERT_VERBS.join('|')+')\\b','i');
+  if (!re.test(text)) return false;
+  engine.setFlag('pill_intake_covert', { ttl: 1 });
+  return true;
+}
+function detectPillDescriptor(text, engine) {
+  if (!text || typeof text !== 'string') return null;
+  const fe = [];
+  for (const e of DESCRIPTOR_EFFECTS) if (new RegExp('\\b'+e+'\\b','i').test(text)) fe.push(e);
+  let fm = null;
+  for (const m of BODY_MODIFIERS) if (new RegExp('\\b'+m+'\\b','i').test(text)) { fm = m; break; }
+  if (fe.length) engine.setFlag('pill_descriptor_effects_present', { ttl: 1, value: fe });
+  if (fm) engine.setFlag('pill_descriptor_body_modifier_present', { ttl: 1, value: fm });
+  return { effects: fe, modifier: fm };
+}
+
+const ANTIDOTE_KEYWORDS = ['antidote','x-cure','xcure','neutralizer'];
+function detectAntidote(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  if (!new RegExp('\\b(?:'+ANTIDOTE_KEYWORDS.join('|')+')\\b','i').test(text)) return false;
+  engine.setFlag('detected_antidote_taken', { ttl: 1 });
+  const verbs = ['take','takes','took','swallow','swallows','swallowed','drink','drinks','drank','consume','consumes','consumed'];
+  const fp = new RegExp("\\bI(?:'ll|'m|'ve| will| am| just| ?gonna)?\\s+(?:[a-z]+\\s+)?(?:"+verbs.join('|')+")\\b[\\s\\S]{0,40}\\b(?:"+ANTIDOTE_KEYWORDS.join('|')+")\\b|\\b(?:"+ANTIDOTE_KEYWORDS.join('|')+")\\b[\\s\\S]{0,40}\\bI(?:'ll|'m|'ve| will| am| just| ?gonna)?\\s+(?:[a-z]+\\s+)?(?:"+verbs.join('|')+")\\b",'i');
+  if (fp.test(text)) engine.setFlag('antidote_intake_first_person', { ttl: 1 });
+  return true;
+}
+
+const CREAMPIE_PATTERNS = [
+  /\bcreampie(?:s|d)?\b/i,
+  /\b(?:cum|come|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill|finish)\w*[\s\S]{0,60}\b(?:inside|into|in|womb|uterus|cervix|her\s+pussy|your\s+pussy)\b/i,
+  /\b(?:inside|into|womb|uterus|cervix)\b[\s\S]{0,60}\b(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)\w*\b/i,
+];
+const MALE_ORGASM_EXTERNAL_PATTERNS = [
+  /\bpull(?:s|ed)?\s+out\b[\s\S]{0,40}\b(?:cum|came|finish|climax)\w*/i,
+  /\b(?:cum|came|finish|climax)\w*[\s\S]{0,40}\bon\s+(?:her|your|my)\b/i,
+  /\bcame?\s+(?:in|on|to)\s+(?:my|her|your)\s+mouth\b/i,
+  /\bI(?:'ve|'ll|'m| just| ?will| ?am)?\s+(?:cum|came|finished|climaxed)\b/i,
+];
+const CUM_SWALLOWED_PATTERNS = [
+  /\bswallow\w*[\s\S]{0,40}\b(?:cum|seed|load|jizz)\b/i,
+  /\b(?:cum|seed|load|jizz)\b[\s\S]{0,40}\bswallow\w*/i,
+  /\b(?:gulp|drink)\w*[\s\S]{0,30}?\b(?:cum|seed|load|jizz)\b/i,
+];
+const SEX_ENGAGEMENT_PATTERNS = [
+  /\b(?:thrust|push|slide|sink|drive|enter|penetrat)\w*[\s\S]{0,30}\b(?:into|inside|in\b)/i,
+  /\b(?:fuck|fucking|fucked|fucks)\b/i,
+  /\b(?:ride|riding|rode|rides)\b[\s\S]{0,20}\b(?:cock|dick|him|his)\b/i,
+  /\b(?:grind|grinding|grinds|grinded)\b[\s\S]{0,20}\b(?:against|on|onto)\b/i,
+  /\b(?:cock|dick|shaft)\b[\s\S]{0,30}\b(?:inside|filling|stretching|spreading)/i,
+];
+function detectCreampie(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of CREAMPIE_PATTERNS) if (re.test(text)) {
+    engine.setFlag('detected_creampie_vaginal', { ttl: 1 });
+    engine.setFlag('detected_male_climaxed', { ttl: 1, value: 'creampie_vaginal' });
+    return true;
+  }
+  return false;
+}
+function detectMaleOrgasmExternal(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of MALE_ORGASM_EXTERNAL_PATTERNS) if (re.test(text)) {
+    engine.setFlag('detected_male_orgasm_external', { ttl: 1 });
+    engine.setFlag('detected_male_climaxed', { ttl: 1, value: 'male_orgasm_external' });
+    return true;
+  }
+  return false;
+}
+function detectCumSwallowed(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of CUM_SWALLOWED_PATTERNS) if (re.test(text)) { engine.setFlag('detected_cum_swallowed', { ttl: 1 }); return true; }
+  return false;
+}
+function detectSexEngagement(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of SEX_ENGAGEMENT_PATTERNS) if (re.test(text)) { engine.setFlag('detected_sex_engagement', { ttl: 1 }); return true; }
+  return false;
+}
+
+const PREGNANCY_STAGE_SHOWING_PATTERNS = [
+  /\bbab(?:y|ies)\s+(?:bump|belly)/i,
+  /\bshow(?:s|ed|ing)\s+(?:through|already|now)/i,
+  /\b(?:swollen|round(?:ed)?|protruding)\s+belly/i,
+  /\bbelly\s+(?:is|has)\s+(?:start|begin|round|swell|grow)\w*/i,
+];
+const PREGNANCY_STAGE_LATE_PATTERNS = [
+  /\b(?:due|ready)\s+(?:any\s+day|to\s+(?:pop|burst|deliver))/i,
+  /\b(?:full[- ]term|nine[- ]months?|ninth\s+month)/i,
+  /\b(?:huge|massive|enormous)\s+(?:belly|bump)/i,
+  /\b(?:waddl|nest)(?:e|ed|ing|es)\b/i,
+];
+const BIRTH_PATTERNS = [
+  /\b(?:gives?|gave|giving)\s+birth\b/i,
+  /\b(?:push(?:es|ed|ing)?|deliver(?:s|ed|ing)?)\s+(?:the\s+)?bab(?:y|ies)\b/i,
+  /\blabor\s+(?:starts?|started|begin\w*|came)\b/i,
+  /\bbab(?:y|ies)\s+(?:is|are|was|were)\s+born\b/i,
+  /\bcontractions?\s+(?:start|begin|come|hit)/i,
+];
+function detectPregnancyStageShowing(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of PREGNANCY_STAGE_SHOWING_PATTERNS) if (re.test(text)) { engine.setFlag('detected_pregnancy_stage_showing', { ttl: 1 }); return true; }
+  return false;
+}
+function detectPregnancyStageLate(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of PREGNANCY_STAGE_LATE_PATTERNS) if (re.test(text)) { engine.setFlag('detected_pregnancy_stage_late', { ttl: 1 }); return true; }
+  return false;
+}
+function detectBirth(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  for (const re of BIRTH_PATTERNS) if (re.test(text)) { engine.setFlag('detected_birth', { ttl: 1 }); return true; }
+  return false;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Module registration (all 11 modules inlined)
+// ────────────────────────────────────────────────────────────────────
+
+function _getPillTarget(engine, state) {
+  if (engine.isFlagActive('pill_persona_target_this_turn')) {
+    if (!state.persona) state.persona = {};
+    return state.persona;
+  }
+  return state;
+}
+function _firePillConsume(engine, color) {
+  engine.setFlag('pill_taken_this_turn', { ttl: 1, value: color });
+  engine.clearFlag('pill_pending');
+  if (engine.isFlagActive('pill_intake_first_person')) engine.setFlag('pill_persona_target_this_turn', { ttl: 1 });
+}
+
+function registerPillIntake(engine) {
+  ['pill_color_detected','pill_intake_verb_seen','pill_intake_first_person','pill_intake_covert',
+   'pill_descriptor_effects_present','pill_descriptor_body_modifier_present',
+   'pill_taken_this_turn','pill_persona_target_this_turn',
+   'pill_invalid_for_gender','pill_already_active_same_color','pill_just_transformed']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerFlag('pill_pending', { type:'turn_based_reset', ttl:3 });
+
+  engine.registerHandler('setPillPending', state => {
+    engine.setFlag('pill_pending', { ttl:3, value: engine.getFlagValue('pill_color_detected') });
+  });
+  engine.registerHandler('consumePillFromColorDetected', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected')));
+  engine.registerHandler('consumePillFromPending', state => _firePillConsume(engine, engine.getFlagValue('pill_pending')));
+  engine.registerHandler('consumePillCovert', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected')));
+  engine.registerHandler('checkPillValidity', state => {
+    const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
+    const r = PILL_RULES[c]; if (!r) return;
+    if (t.birthSex && t.birthSex !== r.valid_birthSex) engine.setFlag('pill_invalid_for_gender', { ttl:1 });
+  });
+  engine.registerHandler('applyPill', state => {
+    const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
+    if (t.active_pill === c) { engine.setFlag('pill_already_active_same_color', { ttl:1 }); return; }
+    const r = PILL_RULES[c]; if (!r) return;
+    t.active_pill = c;
+    if (!r.no_form_change) { t.form = { sex: r.form_sex, genitals: r.genitals }; engine.setFlag('pill_just_transformed', { ttl:1 }); }
+    const mod = engine.getFlagValue('pill_descriptor_body_modifier_present');
+    if (mod) t._pending_body_modifier = mod;
+  });
+  engine.registerHandler('applyDescriptorEffects', state => {
+    const t = _getPillTarget(engine, state);
+    const fx = engine.getFlagValue('pill_descriptor_effects_present') || [];
+    if (!fx.length) return;
+    if (!t.active_effects) t.active_effects = [];
+    if (!t.effect_resistance) t.effect_resistance = {};
+    if (!t.flags) t.flags = {};
+    for (const e of fx) {
+      if (t.active_effects.includes(e)) continue;
+      t.active_effects.push(e);
+      if (e === 'surrogate' && !t.flags._surrogate_pre_erode_done) {
+        const r = t.effect_resistance.breeder != null ? t.effect_resistance.breeder : 100;
+        t.effect_resistance.breeder = Math.min(40, r);
+        t.flags._surrogate_pre_erode_done = true;
+      }
+    }
+  });
+
+  engine.registerRule({ name:'pill_pending_set', requires:['pill_color_detected'], requires_not:['pill_intake_verb_seen','pill_intake_covert','pill_taken_this_turn'], actions:[{type:'call_handler', name:'setPillPending'}] });
+  engine.registerRule({ name:'pill_taken_direct', requires:['pill_color_detected','pill_intake_verb_seen'], requires_not:['pill_taken_this_turn'], actions:[{type:'call_handler', name:'consumePillFromColorDetected'}] });
+  engine.registerRule({ name:'pill_taken_from_pending', requires:['pill_pending','pill_intake_verb_seen'], requires_not:['pill_taken_this_turn','pill_color_detected'], actions:[{type:'call_handler', name:'consumePillFromPending'}] });
+  engine.registerRule({ name:'pill_taken_covert', requires:['pill_color_detected','pill_intake_covert'], requires_not:['pill_taken_this_turn'], actions:[{type:'call_handler', name:'consumePillCovert'}] });
+  engine.registerRule({ name:'pill_validity_check', requires:['pill_taken_this_turn'], actions:[{type:'call_handler', name:'checkPillValidity'}] });
+  engine.registerRule({ name:'pill_apply_consequences', requires:['pill_taken_this_turn'], requires_not:['pill_invalid_for_gender'], actions:[{type:'call_handler', name:'applyPill'}] });
+  engine.registerRule({ name:'pill_apply_descriptor_effects', requires:['pill_taken_this_turn'], requires_not:['pill_invalid_for_gender','pill_already_active_same_color'], actions:[{type:'call_handler', name:'applyDescriptorEffects'}] });
+}
+
+function _getAntidoteTarget(engine, state) {
+  if (engine.isFlagActive('antidote_persona_target_this_turn')) {
+    if (!state.persona) state.persona = {};
+    return state.persona;
+  }
+  return state;
+}
+function _isPregnancyLocked(t) {
+  if (t.pregnancy && t.pregnancy.confirmed) return true;
+  if (t.flags && t.flags.pregnancy_confirmed) return true;
+  return false;
+}
+function registerAntidote(engine) {
+  ['detected_antidote_taken','antidote_intake_first_person','antidote_persona_target_this_turn',
+   'antidote_blocked_by_pregnancy','antidote_applied_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerHandler('routeAntidoteTarget', state => {
+    if (engine.isFlagActive('antidote_intake_first_person')) engine.setFlag('antidote_persona_target_this_turn', { ttl:1 });
+  });
+  engine.registerHandler('applyAntidote', state => {
+    const t = _getAntidoteTarget(engine, state);
+    if (_isPregnancyLocked(t)) { engine.setFlag('antidote_blocked_by_pregnancy', { ttl:1 }); return; }
+    delete t.active_pill;
+    const tf = t.flags || {};
+    t.active_effects = (t.active_effects || []).filter(e =>
+      (e === 'bimbo' && tf.bimbo_permanent) || (e === 'psyche' && tf.psyche_permanent));
+    t.effect_resistance = {};
+    delete t.form;
+    delete t._pending_body_modifier;
+    if (t.flags) delete t.flags._surrogate_pre_erode_done;
+    engine.setFlag('antidote_applied_this_turn', { ttl:1 });
+  });
+  engine.registerRule({ name:'antidote_route_target', requires:['detected_antidote_taken'], actions:[{type:'call_handler', name:'routeAntidoteTarget'}] });
+  engine.registerRule({ name:'antidote_apply', requires:['detected_antidote_taken'], actions:[{type:'call_handler', name:'applyAntidote'}] });
+}
+
+function createSessionFSM(engine) {
+  let cur = 'idle';
+  return {
+    getState: () => cur,
+    setState: s => { cur = s; },
+    transition: (to, reason) => {
+      if (cur === to) return false;
+      const from = cur; cur = to;
+      engine.setFlag('session_state', { value: to });
+      engine.setFlag('session_'+to+'_this_turn', { ttl:1 });
+      return true;
+    },
+  };
+}
+function registerClimaxSession(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const arousalGateThreshold = opts.arousalGateThreshold != null ? opts.arousalGateThreshold : 50;
+  const rollD100 = () => Math.floor(rng() * 100) + 1;
+  const Session = createSessionFSM(engine);
+  ['detected_creampie_vaginal','detected_male_orgasm_external','detected_male_climaxed','detected_cum_swallowed','detected_sex_engagement','character_orgasm_this_turn','arousal_gate_attempt_this_turn','session_idle_this_turn','session_engaged_this_turn','session_ended_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerFlag('session_state', { type:'indefinite' });
+  engine.registerHandler('triggerSessionEnd', state => { if (Session.getState() === 'engaged') Session.transition('ended', 'male_climaxed'); });
+  engine.registerHandler('resetSessionCounters', state => {
+    state.session_orgasm_count = 0; state.session_fail_count = 0; state.active_side_effects = [];
+    state.sessions_completed = (state.sessions_completed || 0) + 1;
+  });
+  engine.registerHandler('clearTransientSideEffects', state => {
+    delete state._hair_trigger_active; delete state._two_in_chamber_active;
+    delete state._two_in_chamber_chain; delete state._side_fx_arousal_floor_bonus;
+  });
+  engine.registerHandler('incrementCharacterOrgasmCounters', state => {
+    state._orgasm_count = (state._orgasm_count || 0) + 1;
+    state.session_orgasm_count = (state.session_orgasm_count || 0) + 1;
+    state.total_orgasm_count = (state.total_orgasm_count || 0) + 1;
+  });
+  engine.registerHandler('resetArousalPostOrgasm', state => { state.arousal = 15; });
+  engine.registerHandler('engageSession', state => { if (Session.getState() === 'idle') Session.transition('engaged', 'sex_engagement_detected'); });
+  engine.registerHandler('arousalGateOrgasmCheck', state => {
+    const a = state.arousal || 0;
+    if (a < 80) return;
+    const fx = state.active_effects || [];
+    if ((fx.includes('breeder') || fx.includes('surrogate')) && !(state.pregnancy && state.pregnancy.confirmed)) return;
+    if (fx.includes('denial')) return;
+    engine.setFlag('arousal_gate_attempt_this_turn', { ttl:1 });
+    if (rollD100() <= arousalGateThreshold) engine.setFlag('character_orgasm_this_turn', { ttl:1 });
+  });
+  engine.registerRule({ name:'male_climaxed_consequences', requires:['detected_male_climaxed'], actions:[{type:'call_handler', name:'triggerSessionEnd'}] });
+  engine.registerRule({ name:'session_end_consequences', requires:['session_ended_this_turn'], actions:[{type:'call_handler', name:'resetSessionCounters'},{type:'call_handler', name:'clearTransientSideEffects'}] });
+  engine.registerRule({ name:'session_engage_on_sex_detected', requires:['detected_sex_engagement'], actions:[{type:'call_handler', name:'engageSession'}] });
+  engine.registerRule({ name:'arousal_gate_orgasm_on_male_climax', requires:['detected_male_climaxed'], actions:[{type:'call_handler', name:'arousalGateOrgasmCheck'}] });
+  engine.registerRule({ name:'character_orgasm_consequences', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'incrementCharacterOrgasmCounters'},{type:'call_handler', name:'resetArousalPostOrgasm'}] });
+  return { Session };
+}
+
+function createPregnancyFSM(engine) {
+  let cur = 'none';
+  return {
+    getState: () => cur,
+    setState: s => { cur = s; },
+    transition: (to, reason) => {
+      if (cur === to) return false;
+      cur = to;
+      engine.setFlag('pregnancy_state', { value: to });
+      engine.setFlag('pregnancy_'+to+'_this_turn', { ttl:1 });
+      if (to === 'none' || to === 'delivered') engine.clearFlag('pregnancy_active');
+      else engine.setFlag('pregnancy_active');
+      return true;
+    },
+  };
+}
+const PREGNANCY_ODDS = { normal: 4, breeder: 85, bull: 90, breeder_and_bull: 97 };
+function isPregnancyEligible(state) {
+  const g = (state.form && state.form.genitals) || state.genitals;
+  if (g !== 'vagina_only') return false;
+  if (state.pregnancy && state.pregnancy.confirmed) return false;
+  if (state.flags && state.flags.pregnancy_confirmed) return false;
+  return true;
+}
+function pregnancyMode(state) {
+  const fx = state.active_effects || [];
+  const b = fx.includes('breeder') || fx.includes('surrogate');
+  const bull = fx.includes('bull');
+  if (b && bull) return 'breeder_and_bull';
+  if (bull) return 'bull';
+  if (b) return 'breeder';
+  return 'normal';
+}
+function registerPregnancy(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const rollD100 = () => Math.floor(rng() * 100) + 1;
+  const Pregnancy = createPregnancyFSM(engine);
+  ['detected_pregnancy_stage_showing','detected_pregnancy_stage_late','detected_birth',
+   'pregnancy_eligible_this_turn','pregnancy_conception_attempted',
+   'pregnancy_none_this_turn','pregnancy_conceived_this_turn','pregnancy_showing_this_turn','pregnancy_late_this_turn','pregnancy_delivered_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerFlag('pregnancy_state', { type:'indefinite' });
+  engine.registerFlag('pregnancy_active', { type:'indefinite' });
+  engine.registerHandler('checkPregnancyEligibility', state => { if (isPregnancyEligible(state)) engine.setFlag('pregnancy_eligible_this_turn', { ttl:1 }); });
+  engine.registerHandler('rollPregnancyConception', state => {
+    if (Pregnancy.getState() !== 'none' && Pregnancy.getState() !== 'delivered') return;
+    const m = pregnancyMode(state); const t = PREGNANCY_ODDS[m];
+    engine.setFlag('pregnancy_conception_attempted', { ttl:1 });
+    if (rollD100() <= t) {
+      if (!state.pregnancy) state.pregnancy = {};
+      state.pregnancy.confirmed = true; state.pregnancy.mode = m;
+      if (!state.flags) state.flags = {};
+      state.flags.pregnancy_confirmed = true;
+      state._conception_turn = engine.getCurrentTurn();
+      Pregnancy.transition('conceived', 'creampie:'+m);
+    }
+  });
+  engine.registerHandler('autoAdvancePregnancyStage', state => {
+    if (!state.pregnancy || !state.pregnancy.confirmed) return;
+    const ct = state._conception_turn || 0;
+    const ts = engine.getCurrentTurn() - ct;
+    if (Pregnancy.getState() === 'conceived' && ts >= 4) {
+      Pregnancy.transition('showing', 'auto_turn_count');
+      if (!state.flags) state.flags = {}; state.flags.pregnancy_stage_showing = true;
+    }
+    if (Pregnancy.getState() === 'showing' && ts >= 8) {
+      Pregnancy.transition('late', 'auto_turn_count');
+      if (!state.flags) state.flags = {}; state.flags.pregnancy_stage_late = true;
+    }
+  });
+  engine.registerHandler('confirmPregnancyShowingFromText', state => {
+    if (!state.pregnancy || !state.pregnancy.confirmed) return;
+    if (Pregnancy.getState() === 'conceived') {
+      Pregnancy.transition('showing', 'text_confirmation');
+      if (!state.flags) state.flags = {}; state.flags.pregnancy_stage_showing = true;
+    }
+  });
+  engine.registerHandler('confirmPregnancyLateFromText', state => {
+    if (!state.pregnancy || !state.pregnancy.confirmed) return;
+    const c = Pregnancy.getState();
+    if (c === 'conceived' || c === 'showing') {
+      Pregnancy.transition('late', 'text_confirmation');
+      if (!state.flags) state.flags = {};
+      state.flags.pregnancy_stage_late = true; state.flags.pregnancy_stage_showing = true;
+    }
+  });
+  engine.registerHandler('handleBirth', state => {
+    if (!state.pregnancy || !state.pregnancy.confirmed) return;
+    Pregnancy.transition('delivered', 'birth_event');
+    state.pregnancies_completed = (state.pregnancies_completed || 0) + 1;
+    delete state.pregnancy; delete state._conception_turn;
+    if (state.flags) {
+      delete state.flags.pregnancy_confirmed;
+      delete state.flags.pregnancy_stage_showing;
+      delete state.flags.pregnancy_stage_late;
+    }
+    Pregnancy.transition('none', 'post_birth_reset');
+  });
+  engine.registerRule({ name:'pregnancy_check_eligibility', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'checkPregnancyEligibility'}] });
+  engine.registerRule({ name:'pregnancy_conception_roll', requires:['detected_creampie_vaginal','pregnancy_eligible_this_turn'], requires_not:['pregnancy_active'], actions:[{type:'call_handler', name:'rollPregnancyConception'}] });
+  engine.registerRule({ name:'pregnancy_auto_advance', requires:['turn_start','pregnancy_active'], actions:[{type:'call_handler', name:'autoAdvancePregnancyStage'}] });
+  engine.registerRule({ name:'pregnancy_showing_text_confirm', requires:['detected_pregnancy_stage_showing','pregnancy_active'], actions:[{type:'call_handler', name:'confirmPregnancyShowingFromText'}] });
+  engine.registerRule({ name:'pregnancy_late_text_confirm', requires:['detected_pregnancy_stage_late','pregnancy_active'], actions:[{type:'call_handler', name:'confirmPregnancyLateFromText'}] });
+  engine.registerRule({ name:'pregnancy_birth', requires:['detected_birth','pregnancy_active'], actions:[{type:'call_handler', name:'handleBirth'}] });
+  return { Pregnancy };
+}
+
+function _isMotherhoodMode(state, engine) {
+  if (!state.pregnancy || !state.pregnancy.confirmed) return false;
+  if (state._conception_turn === engine.getCurrentTurn()) return false;
+  return true;
+}
+function _hasBreederOrSurrogate(state) { const fx = state.active_effects || []; return fx.includes('breeder') || fx.includes('surrogate'); }
+function _hasPregnancyEligiblePill(state) { const r = PILL_RULES[state.active_pill]; return !!(r && r.preg_eligible); }
+function registerBreederLoop(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const rollD20 = () => Math.floor(rng() * 20) + 1;
+  ['breeder_dc_reset_this_turn','breeder_orgasm_forced_this_turn','breeder_beg_check_this_turn','breeder_beg_denied_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerHandler('resetBreederDC', state => {
+    if (!_hasBreederOrSurrogate(state)) return;
+    state._breeder_dc_current = 30; delete state._breeder_compulsion;
+    engine.setFlag('breeder_dc_reset_this_turn', { ttl:1 });
+  });
+  engine.registerHandler('forceBreederOrgasm', state => {
+    if (!_hasBreederOrSurrogate(state)) return;
+    if (!_hasPregnancyEligiblePill(state)) return;
+    if (_isMotherhoodMode(state, engine)) return;
+    state._breeder_orgasm_count = (state._breeder_orgasm_count || 0) + 1;
+    engine.setFlag('breeder_orgasm_forced_this_turn', { ttl:1 });
+    engine.setFlag('character_orgasm_this_turn', { ttl:1 });
+  });
+  engine.registerHandler('rollBreederBegPath', state => {
+    if (!_hasBreederOrSurrogate(state)) return;
+    if (engine.isFlagActive('detected_creampie_vaginal')) return;
+    if (state.pregnancy && state.pregnancy.confirmed) return;
+    if ((state.arousal || 0) < ORG_ZONE) return;
+    engine.setFlag('breeder_beg_check_this_turn', { ttl:1 });
+    if (rollD20() + getStatMod(state, 'INT') < 15) {
+      state._denial_frustration = (state._denial_frustration || 0) + 1;
+      engine.setFlag('breeder_beg_denied_this_turn', { ttl:1 });
+    }
+  });
+  engine.registerRule({ name:'breeder_dc_reset_on_creampie', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'resetBreederDC'}] });
+  engine.registerRule({ name:'breeder_force_orgasm_on_creampie', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'forceBreederOrgasm'}] });
+  engine.registerRule({ name:'breeder_beg_path_on_male_climax', requires:['detected_male_climaxed'], actions:[{type:'call_handler', name:'rollBreederBegPath'}] });
+}
+
+function _graceFloorForTurns(t) { if (t >= 2) return 6; if (t === 1) return 4; return 2; }
+function registerSurrogate(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const rollD100 = () => Math.floor(rng() * 100) + 1;
+  engine.registerFlag('surrogate_pending_revert', { type:'indefinite' });
+  engine.registerFlag('surrogate_motherhood_snapshot_taken', { type:'indefinite' });
+  ['surrogate_revert_this_turn','surrogate_breeder_lock_attempted']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerHandler('snapshotBreederResistanceForMotherhood', state => {
+    if (!(state.active_effects || []).includes('surrogate')) return;
+    if (engine.isFlagActive('surrogate_motherhood_snapshot_taken')) return;
+    if (!state.effect_resistance) state.effect_resistance = {};
+    if (!state.flags) state.flags = {};
+    state.flags._preconception_breeder_resistance = state.effect_resistance.breeder != null ? state.effect_resistance.breeder : 100;
+    state.effect_resistance.breeder = 100;
+    engine.setFlag('surrogate_motherhood_snapshot_taken');
+  });
+  engine.registerHandler('initSurrogatePostBirth', state => {
+    if (!(state.active_effects || []).includes('surrogate')) return;
+    engine.setFlag('surrogate_pending_revert');
+    state._surrogate_post_birth_turns = 2;
+    state._surrogate_arousal_floor = _graceFloorForTurns(2);
+  });
+  engine.registerHandler('tickSurrogateGrace', state => {
+    if (!engine.isFlagActive('surrogate_pending_revert')) return;
+    if ((state.arousal || 0) >= 60) return;
+    state._surrogate_post_birth_turns = Math.max(0, (state._surrogate_post_birth_turns || 0) - 1);
+    state._surrogate_arousal_floor = _graceFloorForTurns(state._surrogate_post_birth_turns);
+    if (state._surrogate_post_birth_turns === 0) engine.setFlag('surrogate_revert_this_turn', { ttl:1 });
+  });
+  engine.registerHandler('doSurrogateRevert', state => {
+    if (!engine.isFlagActive('surrogate_pending_revert')) return;
+    if (!state.flags) state.flags = {};
+    if (state.flags._preconception_breeder_resistance != null) {
+      if (!state.effect_resistance) state.effect_resistance = {};
+      state.effect_resistance.breeder = state.flags._preconception_breeder_resistance;
+      delete state.flags._preconception_breeder_resistance;
+    }
+    engine.clearFlag('surrogate_motherhood_snapshot_taken');
+    if (state.active_effects) {
+      const i = state.active_effects.indexOf('surrogate');
+      if (i >= 0) state.active_effects.splice(i, 1);
+    }
+    delete state.flags._surrogate_pre_erode_done;
+    engine.clearFlag('surrogate_pending_revert');
+    delete state._surrogate_post_birth_turns;
+    delete state._surrogate_arousal_floor;
+    if (!state.flags.breeder_resistance_locked) {
+      engine.setFlag('surrogate_breeder_lock_attempted', { ttl:1 });
+      if (rollD100() <= 60) state.flags.breeder_resistance_locked = true;
+    }
+  });
+  engine.registerRule({ name:'surrogate_motherhood_snapshot', requires:['pregnancy_conceived_this_turn'], actions:[{type:'call_handler', name:'snapshotBreederResistanceForMotherhood'}] });
+  engine.registerRule({ name:'surrogate_birth_init', requires:['pregnancy_delivered_this_turn'], actions:[{type:'call_handler', name:'initSurrogatePostBirth'}] });
+  engine.registerRule({ name:'surrogate_grace_tick', requires:['turn_start','surrogate_pending_revert'], actions:[{type:'call_handler', name:'tickSurrogateGrace'}] });
+  engine.registerRule({ name:'surrogate_revert', requires:['surrogate_revert_this_turn'], actions:[{type:'call_handler', name:'doSurrogateRevert'}] });
+}
+
+function registerSideEffects(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const rng12 = opts.rng12 || rng;
+  const rollD100 = () => Math.floor(rng() * 100) + 1;
+  const rollD12 = () => Math.floor(rng12() * 12) + 1;
+  ['side_fx_hair_trigger_acquired_this_turn','side_fx_two_in_chamber_acquired_this_turn',
+   'side_fx_confirmed_submissive_acquired_this_turn','side_fx_extra_fertile_acquired_this_turn','side_fx_excitable_ovaries_acquired_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerHandler('rollHairTriggerAcquisition', state => {
+    if (state._hair_trigger_active) return;
+    const o = state.session_orgasm_count || 0;
+    if (o < 3) return;
+    if (rollD100() <= 30 + (o-2)*10) {
+      state._hair_trigger_active = true;
+      state._side_fx_arousal_floor_bonus = 2;
+      if (!state.active_side_effects) state.active_side_effects = [];
+      if (!state.active_side_effects.includes('hair_trigger')) state.active_side_effects.push('hair_trigger');
+      engine.setFlag('side_fx_hair_trigger_acquired_this_turn', { ttl:1 });
+    }
+  });
+  engine.registerHandler('rollTwoInChamberAcquisition', state => {
+    if (state._two_in_chamber_active) return;
+    if (!state._hair_trigger_active) return;
+    const o = state.session_orgasm_count || 0;
+    if (o < 4) return;
+    if (rollD100() <= 30 + (o-2)*10) {
+      state._two_in_chamber_active = true; state._two_in_chamber_chain = 0;
+      if (!state.active_side_effects) state.active_side_effects = [];
+      if (!state.active_side_effects.includes('two_in_chamber')) state.active_side_effects.push('two_in_chamber');
+      engine.setFlag('side_fx_two_in_chamber_acquired_this_turn', { ttl:1 });
+    }
+  });
+  engine.registerHandler('rollConfirmedSubmissiveAcquisition', state => {
+    if (state._confirmed_submissive_active) return;
+    if ((state.session_orgasm_count || 0) < 5) return;
+    if (characterTier(state) < 17) return;
+    if ((state.active_effects || []).includes('tyrant')) return;
+    if (rollD12() <= getStat(state, 'SUB')) {
+      state._confirmed_submissive_active = true;
+      if (!state.stats) state.stats = {};
+      state.stats.SUB = Math.min((state.stats.SUB || 10) + 5, 20);
+      state._arousal_gate_dc = (state._arousal_gate_dc || 10) + 1;
+      if (!state.active_side_effects) state.active_side_effects = [];
+      if (!state.active_side_effects.includes('confirmed_submissive')) state.active_side_effects.push('confirmed_submissive');
+      engine.setFlag('side_fx_confirmed_submissive_acquired_this_turn', { ttl:1 });
+    }
+  });
+  engine.registerHandler('rollExtraFertileAcquisition', state => {
+    if (state._extra_fertile_active) return;
+    if ((state.session_orgasm_count || 0) < 5) return;
+    if (characterTier(state) < 17) return;
+    if (!state.active_pill) return;
+    if (((state.form && state.form.genitals) || state.genitals) !== 'vagina_only') return;
+    if (rollD12() <= getStat(state, 'CON')) {
+      state._extra_fertile_active = true;
+      state._extra_fertile_bonus = (state.pregnancies_completed || 0) * 5;
+      if (!state.active_side_effects) state.active_side_effects = [];
+      if (!state.active_side_effects.includes('extra_fertile')) state.active_side_effects.push('extra_fertile');
+      engine.setFlag('side_fx_extra_fertile_acquired_this_turn', { ttl:1 });
+    }
+  });
+  engine.registerHandler('rollExcitableOvariesAcquisition', state => {
+    if (state._excitable_ovaries_active) return;
+    if (!state._extra_fertile_active) return;
+    if ((state.session_orgasm_count || 0) < 6) return;
+    if (characterTier(state) < 17) return;
+    if (rollD12() <= getStat(state, 'CON')) {
+      state._excitable_ovaries_active = true; state._excitable_ovaries_bonus = 0;
+      if (!state.active_side_effects) state.active_side_effects = [];
+      if (!state.active_side_effects.includes('excitable_ovaries')) state.active_side_effects.push('excitable_ovaries');
+      engine.setFlag('side_fx_excitable_ovaries_acquired_this_turn', { ttl:1 });
+    }
+  });
+  engine.registerHandler('bumpExcitableOvariesBonus', state => {
+    if (!state._excitable_ovaries_active || !state._extra_fertile_active) return;
+    state._excitable_ovaries_bonus = (state._excitable_ovaries_bonus || 0) + 5;
+  });
+  engine.registerRule({ name:'side_fx_hair_trigger_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollHairTriggerAcquisition'}] });
+  engine.registerRule({ name:'side_fx_two_in_chamber_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollTwoInChamberAcquisition'}] });
+  engine.registerRule({ name:'side_fx_confirmed_submissive_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollConfirmedSubmissiveAcquisition'}] });
+  engine.registerRule({ name:'side_fx_extra_fertile_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollExtraFertileAcquisition'}] });
+  engine.registerRule({ name:'side_fx_excitable_ovaries_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollExcitableOvariesAcquisition'}] });
+  engine.registerRule({ name:'side_fx_excitable_ovaries_bump', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'bumpExcitableOvariesBonus'}] });
+}
+
+function registerBimboPsyche(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const rollD100 = () => Math.floor(rng() * 100) + 1;
+  ['bimbo_stage_advanced_this_turn','psyche_stage_advanced_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  ['bimbo_permanent','psyche_permanent']
+    .forEach(f => engine.registerFlag(f, { type:'indefinite' }));
+  function makeAdv(eff, sf, af, pf, st) {
+    return state => {
+      if (!(state.active_effects || []).includes(eff)) return;
+      const cur = state[sf] || 0;
+      if (cur >= 3) return;
+      const m = getStatMod(state, st);
+      if (rollD100() <= 30 + cur*10 - m*5) {
+        state[sf] = cur + 1;
+        engine.setFlag(af, { ttl:1 });
+        if (state[sf] >= 3) {
+          engine.setFlag(pf);
+          if (!state.flags) state.flags = {};
+          state.flags[pf] = true;
+        }
+      }
+    };
+  }
+  engine.registerHandler('rollBimboAdvance', makeAdv('bimbo','_bimbo_stage','bimbo_stage_advanced_this_turn','bimbo_permanent','INT'));
+  engine.registerHandler('rollPsycheAdvance', makeAdv('psyche','_psyche_stage','psyche_stage_advanced_this_turn','psyche_permanent','WIS'));
+  engine.registerRule({ name:'bimbo_advance_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollBimboAdvance'}] });
+  engine.registerRule({ name:'psyche_advance_check', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'rollPsycheAdvance'}] });
+}
+
+const RESISTANCE_TRACKED_EFFECTS = ['bimbo','breeder','submissive','compliant','bull','denial','surrogate'];
+function _clampR(v) { if (v < 0) return 0; if (v > 100) return 100; return v; }
+function applyResistanceDelta(state, eff, delta) {
+  if (!state.effect_resistance) state.effect_resistance = {};
+  if (!state.flags) state.flags = {};
+  if (eff === 'breeder' && state.flags.breeder_resistance_locked) return;
+  const cur = state.effect_resistance[eff] != null ? state.effect_resistance[eff] : 100;
+  let next = _clampR(cur + delta);
+  const lwm = state._effect_low_water || {};
+  const lw = lwm[eff];
+  const bf = '_'+eff+'_broken';
+  if (delta > 0 && state.flags[bf] && lw != null && next > lw) next = lw;
+  state.effect_resistance[eff] = next;
+  if (!state._effect_low_water) state._effect_low_water = {};
+  const prev = state._effect_low_water[eff];
+  if (prev == null || next < prev) state._effect_low_water[eff] = next;
+  if (state._effect_low_water[eff] <= 20 && !state.flags[bf]) state.flags[bf] = true;
+}
+function _processEffectResist(state, eff, rollD100, engine) {
+  if (!state._effect_resist_fail_count) state._effect_resist_fail_count = {};
+  if (!state._effect_resist_streak_count) state._effect_resist_streak_count = {};
+  if (!state._effect_resist_streak_bonus) state._effect_resist_streak_bonus = {};
+  if (!state._effect_resist_dc) state._effect_resist_dc = {};
+  const fc = state._effect_resist_fail_count[eff] || 0;
+  const ap = arousalPressure(state.arousal || 0);
+  const sm = getStatMod(state, 'SUB');
+  const tp = Math.min(fc + sm + ap, 60);
+  if (tp <= 0) return 'skip';
+  if (rollD100() > tp) return 'skip';
+  state._effect_resist_fail_count[eff] = fc + 1;
+  const sd = state._effect_resist_dc[eff] || 10;
+  const cm = getStatMod(state, effectCounterStat(eff));
+  const r = state.effect_resistance && state.effect_resistance[eff] != null ? state.effect_resistance[eff] : 100;
+  const sb = state._effect_resist_streak_bonus[eff] || 0;
+  const ad = Math.min(sd + cm + Math.floor((100-r)/10) + sb, 22);
+  if (rollD100() <= ad) {
+    state._effect_resist_dc[eff] = sd + 1;
+    const ns = (state._effect_resist_streak_count[eff] || 0) + 1;
+    state._effect_resist_streak_count[eff] = ns;
+    if (ns % 3 === 0) state._effect_resist_streak_bonus[eff] = sb + 2;
+    return 'resist';
+  } else {
+    applyResistanceDelta(state, eff, -10);
+    state._effect_resist_streak_count[eff] = 0;
+    state._effect_resist_streak_bonus[eff] = 0;
+    return 'erode';
+  }
+}
+function registerEffectResistance(engine, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const rollD100 = () => Math.floor(rng() * 100) + 1;
+  ['effect_resistance_initialized_this_turn','effect_resist_processed_this_turn']
+    .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
+  engine.registerHandler('initializeEffectResistance', state => {
+    if (!state.effect_resistance) state.effect_resistance = {};
+    if (!state._effect_low_water) state._effect_low_water = {};
+    if (!state.flags) state.flags = {};
+    let did = false;
+    for (const eff of (state.active_effects || [])) {
+      if (state.effect_resistance[eff] === undefined) { state.effect_resistance[eff] = 100; did = true; }
+      if (state._effect_low_water[eff] === undefined) state._effect_low_water[eff] = state.effect_resistance[eff];
+      const bf = '_'+eff+'_broken';
+      if (state._effect_low_water[eff] <= 20 && !state.flags[bf]) state.flags[bf] = true;
+    }
+    if (did) engine.setFlag('effect_resistance_initialized_this_turn', { ttl:1 });
+  });
+  engine.registerHandler('processAllEffectResistance', state => {
+    for (const eff of (state.active_effects || [])) {
+      if (!RESISTANCE_TRACKED_EFFECTS.includes(eff)) continue;
+      _processEffectResist(state, eff, rollD100, engine);
+    }
+    engine.setFlag('effect_resist_processed_this_turn', { ttl:1 });
+  });
+  engine.registerRule({ name:'effect_resistance_init_per_turn', requires:['turn_start'], actions:[{type:'call_handler', name:'initializeEffectResistance'}] });
+  engine.registerRule({ name:'effect_resist_on_sex_engagement', requires:['detected_sex_engagement'], actions:[{type:'call_handler', name:'processAllEffectResistance'}] });
+  engine.registerRule({ name:'effect_resist_on_male_climax', requires:['detected_male_climaxed'], requires_not:['effect_resist_processed_this_turn'], actions:[{type:'call_handler', name:'processAllEffectResistance'}] });
+}
+
+function _clampMasc(v) { if (v < 0) return 0; if (v > 20) return 20; return v; }
+function registerMasculinity(engine) {
+  engine.registerFlag('masculinity_delta_applied_this_turn', { type:'turn_based_reset', ttl:1 });
+  engine.registerHandler('applyMasculinitySexDelta', state => {
+    if (!state.active_pill) return;
+    const r = PILL_RULES[state.active_pill];
+    if (!r || r.masculinity_sex === undefined || r.masculinity_sex === 0) return;
+    state.masculinity = _clampMasc((state.masculinity != null ? state.masculinity : 10) + r.masculinity_sex);
+    engine.setFlag('masculinity_delta_applied_this_turn', { ttl:1 });
+  });
+  engine.registerHandler('applyMasculinityOrgasmDelta', state => {
+    if (!state.active_pill) return;
+    const r = PILL_RULES[state.active_pill];
+    if (!r || r.masculinity_orgasm === undefined || r.masculinity_orgasm === 0) return;
+    state.masculinity = _clampMasc((state.masculinity != null ? state.masculinity : 10) + r.masculinity_orgasm);
+    engine.setFlag('masculinity_delta_applied_this_turn', { ttl:1 });
+  });
+  engine.registerRule({ name:'masculinity_sex_delta', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'applyMasculinitySexDelta'}] });
+  engine.registerRule({ name:'masculinity_orgasm_delta', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'applyMasculinityOrgasmDelta'}] });
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Singleton + runTurn
+// ────────────────────────────────────────────────────────────────────
+
+const engine = createRuleEngine();
+registerPillIntake(engine);
+registerAntidote(engine);
+const climaxRefs = registerClimaxSession(engine);
+const pregRefs = registerPregnancy(engine);
+registerBreederLoop(engine);
+registerSurrogate(engine);
+registerSideEffects(engine);
+registerBimboPsyche(engine);
+registerEffectResistance(engine);
+registerMasculinity(engine);
+
+function runTurn(state, lastUserText, lastAssistantText) {
+  engine.tick();
+  const text = (lastUserText || '') + '\n' + (lastAssistantText || '');
+  detectPillColor(text, engine);
+  detectPillIntakeVerb(text, engine);
+  detectPillCovertIntake(text, engine);
+  detectPillDescriptor(text, engine);
+  detectAntidote(text, engine);
+  detectCreampie(text, engine);
+  detectMaleOrgasmExternal(text, engine);
+  detectCumSwallowed(text, engine);
+  detectSexEngagement(text, engine);
+  detectPregnancyStageShowing(text, engine);
+  detectPregnancyStageLate(text, engine);
+  detectBirth(text, engine);
+  engine.evaluate(state);
+  const fired = engine.getActiveFlags().filter(f => /(_this_turn|detected_)/.test(f));
+  if (fired.length && typeof console !== 'undefined' && console.log) {
+    console.log('[XR turn ' + engine.getCurrentTurn() + '] flags:', fired.join(', '));
+  }
+}
+
+return {
+  engine: engine,
+  Session: climaxRefs.Session,
+  Pregnancy: pregRefs.Pregnancy,
+  runTurn: runTurn,
+  PILL_RULES: PILL_RULES,
+};
+
+})();
+
+// ─── END REBUILD INTEGRATION ───────────────────────────────────────────
 
 // ──────────────────────────────────────────────────────────────────────────────
 // HELPER FUNCTIONS
@@ -14997,6 +16011,25 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   }
 
   processEvents(state, events, sex, notes, rs, personaState?.active_effects, personaState);
+
+  // === REBUILD INTEGRATION HOOK (v7.6.0, parallel-running for inspection) ===
+  // Runs the new rule-engine architecture against current state. Writes flags
+  // and effect-tracking fields onto state but legacy code remains authoritative
+  // for game-affecting outputs. Logs via [XR] prefix.
+  try {
+    const _xrLastUser = recentForIntake.filter(function (m) { return m.role === 'user'; }).slice(-1)[0];
+    const _xrLastAsst = recentForIntake.filter(function (m) { return m.role === 'assistant'; }).slice(-1)[0];
+    _xRebuildSystem.runTurn(
+      state,
+      _xrLastUser ? _xrLastUser.content : '',
+      _xrLastAsst ? _xrLastAsst.content : ''
+    );
+  } catch (_xrErr) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[XR] runTurn error (non-fatal):', _xrErr && _xrErr.message ? _xrErr.message : _xrErr);
+    }
+  }
+
   checkSideEffects(state, events, rs, sex);
 
   updatePersonaRelationship(personaState, name, events, state, rs);
