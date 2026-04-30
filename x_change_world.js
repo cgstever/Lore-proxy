@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.2",
+  "version": "7.7.3",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7064,7 +7064,14 @@ function registerAntidote(engine) {
     t.active_effects = (t.active_effects || []).filter(e =>
       (e === 'bimbo' && tf.bimbo_permanent) || (e === 'psyche' && tf.psyche_permanent));
     t.effect_resistance = {};
-    delete t.form;
+    // v7.7.3 — reset form to birth-sex defaults (was previously just deleted, leaving form ambiguous)
+    if (t.birthSex === 'male') {
+      t.form = { sex: 'male', genitals: 'penis_only' };
+    } else if (t.birthSex === 'female') {
+      t.form = { sex: 'female', genitals: 'vagina_only' };
+    } else {
+      delete t.form;  // unknown birthSex → fall back to card defaults
+    }
     delete t._pending_body_modifier;
     // v7.7.2 — also clear legacy pending-pill markers and rebuild's pill_pending flag
     delete t._pending_pill;
