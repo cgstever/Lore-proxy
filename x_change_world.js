@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.3",
+  "version": "7.7.4",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6954,6 +6954,21 @@ function _getPillTarget(engine, state) {
   return state;
 }
 function _firePillConsume(engine, color) {
+  // v7.7.4 — when consuming, restore descriptor flags from pill_pending if the
+  // current turn's detection didn't see them. This handles the cross-turn case
+  // where pill was offered turn N (descriptor present) and intake/color is in
+  // turn N+K with no descriptor in current text. Without this, R2/R4 (direct +
+  // covert consume paths) skip applyDescriptorEffects because the descriptor
+  // flags expired between offer and intake.
+  const pending = engine.getFlagValue('pill_pending');
+  if (pending && typeof pending === 'object') {
+    if (pending.effects && pending.effects.length && !engine.isFlagActive('pill_descriptor_effects_present')) {
+      engine.setFlag('pill_descriptor_effects_present', { ttl: 1, value: pending.effects });
+    }
+    if (pending.modifier && !engine.isFlagActive('pill_descriptor_body_modifier_present')) {
+      engine.setFlag('pill_descriptor_body_modifier_present', { ttl: 1, value: pending.modifier });
+    }
+  }
   engine.setFlag('pill_taken_this_turn', { ttl: 1, value: color });
   engine.clearFlag('pill_pending');
   if (engine.isFlagActive('pill_intake_first_person')) engine.setFlag('pill_persona_target_this_turn', { ttl: 1 });
