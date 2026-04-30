@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.1",
+  "version": "7.7.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7066,6 +7066,12 @@ function registerAntidote(engine) {
     t.effect_resistance = {};
     delete t.form;
     delete t._pending_body_modifier;
+    // v7.7.2 — also clear legacy pending-pill markers and rebuild's pill_pending flag
+    delete t._pending_pill;
+    delete t._pending_pill_desc;
+    delete t._pending_pill_text;
+    delete t._pill_descriptor_this_turn;
+    engine.clearFlag('pill_pending');
     if (t.flags) delete t.flags._surrogate_pre_erode_done;
     engine.setFlag('antidote_applied_this_turn', { ttl:1 });
   });
@@ -16235,6 +16241,20 @@ function processTurn({systemText, messages, state, personaState, config, charNam
       _xrLastAsst ? _xrLastAsst.content : '',
       _xrPreSnapshot
     );
+    // v7.7.2 — antidote also clears legacy pending-pill markers (these aren't in
+    // REBUILD_OWNED_FIELDS, so the copy-back doesn't propagate the clear).
+    if (_xRebuildSystem.engine.isFlagActive('antidote_applied_this_turn')) {
+      delete state._pending_pill;
+      delete state._pending_pill_desc;
+      delete state._pending_pill_text;
+      delete state._pill_descriptor_this_turn;
+      if (_xRebuildSystem.engine.isFlagActive('antidote_persona_target_this_turn') && state.persona) {
+        delete state.persona._pending_pill;
+        delete state.persona._pending_pill_desc;
+        delete state.persona._pending_pill_text;
+        delete state.persona._pill_descriptor_this_turn;
+      }
+    }
   } catch (_xrErr) {
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[XR] runTurn error (non-fatal):', _xrErr && _xrErr.message ? _xrErr.message : _xrErr);
