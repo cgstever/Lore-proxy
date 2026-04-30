@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.0",
+  "version": "7.7.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6967,11 +6967,34 @@ function registerPillIntake(engine) {
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
   engine.registerFlag('pill_pending', { type:'turn_based_reset', ttl:3 });
 
+  // v7.7.1 — bundle descriptor info into pill_pending so cross-turn consume
+  // doesn't lose effects (e.g. "pink breeder pill" turn N, "she swallows it"
+  // turn N+2). Without this, pill_descriptor_effects_present (TTL=1) expires
+  // before consume and effects never activate.
   engine.registerHandler('setPillPending', state => {
-    engine.setFlag('pill_pending', { ttl:3, value: engine.getFlagValue('pill_color_detected') });
+    engine.setFlag('pill_pending', {
+      ttl: 3,
+      value: {
+        color: engine.getFlagValue('pill_color_detected'),
+        effects: engine.getFlagValue('pill_descriptor_effects_present') || null,
+        modifier: engine.getFlagValue('pill_descriptor_body_modifier_present') || null,
+      },
+    });
   });
   engine.registerHandler('consumePillFromColorDetected', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected')));
-  engine.registerHandler('consumePillFromPending', state => _firePillConsume(engine, engine.getFlagValue('pill_pending')));
+  engine.registerHandler('consumePillFromPending', state => {
+    const p = engine.getFlagValue('pill_pending');
+    let color;
+    if (p && typeof p === 'object') {
+      color = p.color;
+      // Restore descriptor flags from pending so applyDescriptorEffects can read them this turn
+      if (p.effects && p.effects.length) engine.setFlag('pill_descriptor_effects_present', { ttl: 1, value: p.effects });
+      if (p.modifier) engine.setFlag('pill_descriptor_body_modifier_present', { ttl: 1, value: p.modifier });
+    } else {
+      color = p;  // backward compat: pre-v7.7.1 value was just a color string
+    }
+    _firePillConsume(engine, color);
+  });
   engine.registerHandler('consumePillCovert', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected')));
   engine.registerHandler('checkPillValidity', state => {
     const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
@@ -7646,7 +7669,9 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
       if (has('pill_persona_target_this_turn')) pillLine += ' (→ persona)';
       lines.push(pillLine);
     } else if (fired.some(function (f) { return f.indexOf('pill_pending') === 0; })) {
-      lines.push('PILL: pending=' + engine.getFlagValue('pill_pending') + ' (waiting for intake verb)');
+      const _pp = engine.getFlagValue('pill_pending');
+      const _ppColor = (_pp && typeof _pp === 'object') ? _pp.color : _pp;
+      lines.push('PILL: pending=' + _ppColor + ' (waiting for intake verb)');
     }
     // ANTIDOTE
     if (has('detected_antidote_taken')) {
