@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.4",
+  "version": "7.7.5",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7791,10 +7791,17 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
     if (fired.some(function (f) { return f === 'pill_taken_this_turn'; }) && shadow.active_effects && shadow.active_effects.length) {
       lines.push('EFFECTS: [' + shadow.active_effects.join(', ') + ']');
     }
-    // Output
+    // Output to console + persist to state so it's visible without dev tools.
+    // v7.7.5 — write to realState._xrebuild_log (rolling buffer of last 20 turns)
+    // so you can read [XR] logs straight from state in your chat inspector / status panel.
     if (lines.length) {
       console.log('[XR t' + turn + ']');
       for (let i = 0; i < lines.length; i++) console.log('  ' + lines[i]);
+      if (realState && typeof realState === 'object') {
+        if (!Array.isArray(realState._xrebuild_log)) realState._xrebuild_log = [];
+        realState._xrebuild_log.push({ turn: turn, lines: lines.slice() });
+        while (realState._xrebuild_log.length > 20) realState._xrebuild_log.shift();
+      }
     }
   }
 }
