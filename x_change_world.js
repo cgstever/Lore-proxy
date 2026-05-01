@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.11",
+  "version": "7.7.12",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -13621,21 +13621,39 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   // Body-path guide — specific narrative for this exact origin→target body transition.
   // Lifted from rs.transformation_physical[color][txBodyPath]; was previously computed and dropped.
   if (txPhysical) lines.push('  <body-path-guide>' + txPhysical + '</body-path-guide>');
-  // v7.7.11 — Genital-tx guide. Book-canon-derived specific prose for the anatomy reshape
-  // between the legs. Engine fact-data; character voice still owns how it gets expressed.
-  // Phrasings synthesized from aphrodite corpus (Tyler/Taylor "shaft inverts", Pushover
-  // "alien hollow", Liya "no cock no balls"). Skipped when noChange (green/red pills).
+  // v7.7.12 — Genital-tx guide. Stage-list reference (not narrative prose). Tells the
+  // model WHAT happens anatomically; character voice translates it. v7.7.11's prose
+  // version caused echo (model lifted "shaft inverting" almost verbatim). Stages force
+  // the model to render in its own words.
   if (!noChange) {
     var _genitalKey = pRule.genitals || '';
-    var _genitalProse = '';
+    var _genitalGuide = '';
     if (_genitalKey === 'vagina_only') {
-      _genitalProse = "The cock pulls back and softens, skin wrapping inward to form what becomes the clitoral hood. The balls ascend and their skin darkens, softening into outer labia. The shaft itself collapses and inverts, reshaping into the vaginal canal. For a heartbeat there's an alien hollow between the thighs — then a new opening asserts itself, slick and warm and undeniably present. Where there was familiar weight there's now a clenching ache and folds that weep openly.";
+      _genitalGuide = "Stages (reference only — do not echo, render in character voice): "
+        + "(1) shaft retracts and inverts inward, "
+        + "(2) testicles ascend and reshape into outer labia, "
+        + "(3) clitoral hood and internal vaginal canal form, "
+        + "(4) brief hollow/empty transitional moment, "
+        + "(5) final: external folds + internal canal + sensitive opening, no shaft or testicles. "
+        + "Texture: slick, warm. Sensation: clenching ache, internal sensitivity, weeping arousal.";
     } else if (_genitalKey === 'penis_only') {
-      _genitalProse = "The folds press together and the clit elongates, swelling into a shaft that thickens and firms by the second. Below it, soft tissue reorganizes — outer labia drawing inward and tightening, the inner channel sealing as new mass forms behind the new shaft. The familiar slickness gives way to weight, a cock and balls hanging where there was an opening. By the end the new anatomy reads as native — hung, heavy, ready.";
+      _genitalGuide = "Stages (reference only — do not echo, render in character voice): "
+        + "(1) folds compress and merge inward, "
+        + "(2) clit elongates and swells into a shaft, "
+        + "(3) new mass forms behind shaft (becomes testicles), "
+        + "(4) internal channel seals (vagina disappears), "
+        + "(5) final: external cock + balls, no opening, weight-forward groin. "
+        + "Texture: firm where slick was. Sensation: pressure, hung weight, forward gravity.";
     } else if (_genitalKey === 'penis_only_no_vagina') {
-      _genitalProse = "The folds compress and seal as new tissue forms a shaft and balls in front of where the opening was. The vagina disappears entirely — no inner channel, no slickness, just smooth skin between thighs that now meet differently. In its place, a cock hangs full and ready while the hips and chest stay female. A new center of gravity forward where there was emptiness.";
+      _genitalGuide = "Stages (reference only — do not echo, render in character voice): "
+        + "(1) folds compress and seal entirely, "
+        + "(2) inner vaginal channel disappears completely, "
+        + "(3) new shaft and testicles form in front of where the opening was, "
+        + "(4) hips and chest stay female; only groin reorganizes, "
+        + "(5) final: cock + balls on a female body, smooth skin where opening used to be. "
+        + "Sensation: weight forward, no internal slickness, female above + male groin.";
     }
-    if (_genitalProse) lines.push('  <genital-tx-guide>' + _genitalProse + '</genital-tx-guide>');
+    if (_genitalGuide) lines.push('  <genital-tx-guide>' + _genitalGuide + '</genital-tx-guide>');
   }
   // Reaction register — character-disposition framing for HOW they relate to the change emotionally.
   if (_wiRegister) lines.push('  <reaction-register>' + _wiRegister + '</reaction-register>');
