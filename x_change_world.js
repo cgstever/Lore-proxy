@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.10",
+  "version": "7.7.11",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -13621,6 +13621,22 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   // Body-path guide — specific narrative for this exact origin→target body transition.
   // Lifted from rs.transformation_physical[color][txBodyPath]; was previously computed and dropped.
   if (txPhysical) lines.push('  <body-path-guide>' + txPhysical + '</body-path-guide>');
+  // v7.7.11 — Genital-tx guide. Book-canon-derived specific prose for the anatomy reshape
+  // between the legs. Engine fact-data; character voice still owns how it gets expressed.
+  // Phrasings synthesized from aphrodite corpus (Tyler/Taylor "shaft inverts", Pushover
+  // "alien hollow", Liya "no cock no balls"). Skipped when noChange (green/red pills).
+  if (!noChange) {
+    var _genitalKey = pRule.genitals || '';
+    var _genitalProse = '';
+    if (_genitalKey === 'vagina_only') {
+      _genitalProse = "The cock pulls back and softens, skin wrapping inward to form what becomes the clitoral hood. The balls ascend and their skin darkens, softening into outer labia. The shaft itself collapses and inverts, reshaping into the vaginal canal. For a heartbeat there's an alien hollow between the thighs — then a new opening asserts itself, slick and warm and undeniably present. Where there was familiar weight there's now a clenching ache and folds that weep openly.";
+    } else if (_genitalKey === 'penis_only') {
+      _genitalProse = "The folds press together and the clit elongates, swelling into a shaft that thickens and firms by the second. Below it, soft tissue reorganizes — outer labia drawing inward and tightening, the inner channel sealing as new mass forms behind the new shaft. The familiar slickness gives way to weight, a cock and balls hanging where there was an opening. By the end the new anatomy reads as native — hung, heavy, ready.";
+    } else if (_genitalKey === 'penis_only_no_vagina') {
+      _genitalProse = "The folds compress and seal as new tissue forms a shaft and balls in front of where the opening was. The vagina disappears entirely — no inner channel, no slickness, just smooth skin between thighs that now meet differently. In its place, a cock hangs full and ready while the hips and chest stay female. A new center of gravity forward where there was emptiness.";
+    }
+    if (_genitalProse) lines.push('  <genital-tx-guide>' + _genitalProse + '</genital-tx-guide>');
+  }
   // Reaction register — character-disposition framing for HOW they relate to the change emotionally.
   if (_wiRegister) lines.push('  <reaction-register>' + _wiRegister + '</reaction-register>');
   // Override clause — engine state wins over card-level persistence claims.
@@ -13628,7 +13644,7 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   lines.push('</tx>');
   lines.push('');
   // Voice-led tx-direction — engine sets WHAT must end up true; character voice owns HOW it\'s narrated.
-  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The body-path-guide describes what physically happens during this specific transition; the reaction-register describes how the character should relate to the change emotionally. Use both as reference, then narrate the experience the way THIS character would experience and express it — through their mannerisms, dialect, and natural turn-length. Don\'t list body parts. Don\'t produce a paragraph per area. The body MUST end as the target listed above. HOW you narrate it is yours.</tx-direction>');
+  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The body-path-guide describes the overall body-shape transition; the genital-tx-guide describes the specific anatomy reshape between the legs (when present — render this beat with the detail it deserves, not a single passing phrase); the reaction-register describes how the character should relate to the change emotionally. Use all three as reference, then narrate the experience the way THIS character would experience and express it — through their mannerisms, dialect, and natural turn-length. Don\'t list body parts. Don\'t produce a paragraph per area. The body MUST end as the target listed above. HOW you narrate it is yours.</tx-direction>');
 
   return _stripEffectNames(lines.join('\n'));
 }
