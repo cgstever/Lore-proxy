@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.13",
+  "version": "7.7.14",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -13667,7 +13667,7 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   lines.push('</tx>');
   lines.push('');
   // Voice-led tx-direction — engine sets WHAT must end up true; character voice owns HOW it\'s narrated.
-  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The body-path-guide describes the overall body-shape transition; the genital-tx-guide describes the specific anatomy reshape between the legs (when present — render this beat with the detail it deserves, not a single passing phrase); the reaction-register describes how the character should relate to the change emotionally. Use all three as reference, then narrate the experience the way THIS character would experience and express it — through their mannerisms, dialect, and natural turn-length. Don\'t list body parts. Don\'t produce a paragraph per area. The body MUST end as the target listed above. HOW you narrate it is yours.</tx-direction>');
+  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The body-path-guide describes the overall body-shape transition; the genital-tx-guide lists the specific anatomy reshape stages between the legs (when present — render EVERY stage explicitly in the character\'s voice; do not compress multiple stages into a single phrase or skip stages); the reaction-register describes how the character should relate to the change emotionally. Use all three as reference, then narrate the experience the way THIS character would experience and express it — through their mannerisms, dialect, and natural turn-length. Don\'t list body parts. Don\'t produce a paragraph per area. The body MUST end as the target listed above, and every stage in the genital-tx-guide MUST be visible in the prose. HOW you narrate it is yours.</tx-direction>');
 
   return _stripEffectNames(lines.join('\n'));
 }
