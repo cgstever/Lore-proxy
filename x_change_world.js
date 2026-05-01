@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.14",
+  "version": "7.7.15",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7644,9 +7644,22 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
   // v7.7.0 — authoritative mode. If preSnapshot provided, evaluate from that
   // pre-legacy state so rebuild's outputs aren't compounded with legacy's.
   // After eval, copy rebuild-owned fields back to realState — rebuild wins.
+  // v7.7.15 — strip _xrebuild and _xrebuild_log from clone source before cloning.
+  // Otherwise shadow inherits last turn's _xrebuild (which itself contains the
+  // turn-before-that's _xrebuild...) and state.json grows exponentially per turn
+  // (~4.5MB after 30 turns). _xrebuild is rebuild's OUTPUT, never an input.
   let shadow;
   try {
-    shadow = JSON.parse(JSON.stringify(preSnapshot || realState || {}));
+    const _src = preSnapshot || realState || {};
+    let _toClone = _src;
+    if (_src && (_src._xrebuild || _src._xrebuild_log)) {
+      _toClone = {};
+      for (const k in _src) {
+        if (k === '_xrebuild' || k === '_xrebuild_log') continue;
+        if (Object.prototype.hasOwnProperty.call(_src, k)) _toClone[k] = _src[k];
+      }
+    }
+    shadow = JSON.parse(JSON.stringify(_toClone));
   } catch (cloneErr) {
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[XR] state clone failed, skipping turn:', cloneErr && cloneErr.message);
