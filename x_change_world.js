@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.19",
+  "version": "7.7.20",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -14991,6 +14991,11 @@ function _compressTurnLog(assistantText, userText, state, events) {
   if (words.length > 26) line = words.slice(0, 26).join(' ') + '...';
 
   state._turn_log.push(line);
+  // v7.7.20 — cap _turn_log at 50 entries. Was unbounded; injected into prompt
+  // every turn via [TURN MEMORY] block (line ~16005). At 100+ turns the block
+  // alone bloated context by thousands of tokens with low-signal old turn lines.
+  // Keep recent 50 (covers most useful continuity); older ages out.
+  if (state._turn_log.length > 50) state._turn_log = state._turn_log.slice(-50);
   console.log('[TURNLOG] T' + tn + ': ' + line + ' (log size: ' + state._turn_log.length + ')');
 }
 
@@ -16312,6 +16317,13 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   // v6.5.213: also clear pre-TX body when no archive remains (same-turn intake swipe cycle ended)
   if (!state._deferred_tx_archive && !state._pill_descriptor_this_turn) {
     delete state._pre_tx_card_body;
+  }
+  // v7.7.20 — cap roll_log to last 200 entries. Was unbounded; pushed-to from
+  // 30+ sites (8600/8649/8660/8762/8793/9290/9310/9332/9404/9423/9434/10165/etc)
+  // adding ~5-15 entries per turn. After 100 turns this was multi-MB in state.
+  // Keep recent rolls only — older are not read for any logic, just diagnostics.
+  if (Array.isArray(state.roll_log) && state.roll_log.length > 200) {
+    state.roll_log = state.roll_log.slice(-200);
   }
   // Snapshot roll_log length so HUD can show "this turn" rolls
   state._roll_log_turn_start = (state.roll_log || []).length;
