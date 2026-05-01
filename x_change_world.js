@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.20",
+  "version": "7.7.21",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -16427,6 +16427,33 @@ function processTurn({systemText, messages, state, personaState, config, charNam
         delete state.persona._pending_pill_desc;
         delete state.persona._pending_pill_text;
         delete state.persona._pill_descriptor_this_turn;
+      }
+    }
+    // v7.7.21 — if rebuild fired pill_taken_this_turn but legacy didn't set
+    // _pill_descriptor_this_turn, fill it in so buildHeader emits the TX block.
+    // This happens when the user message is matched by rebuild's intake detector
+    // but legacy's parsePillFromIngest path didn't fire pill_taken event (e.g.,
+    // when state.active_pill was already set or legacy's events.pill_taken
+    // condition `!state.active_pill` blocked the fire). Without this fix the pill
+    // applies to state but the model gets no TX directive — symptom: model writes
+    // generic "It's... starting" prose with no body description.
+    if (_xRebuildSystem.engine.isFlagActive('pill_taken_this_turn') &&
+        !_xRebuildSystem.engine.isFlagActive('pill_invalid_for_gender') &&
+        !_xRebuildSystem.engine.isFlagActive('pill_already_active_same_color') &&
+        !_xRebuildSystem.engine.isFlagActive('pill_persona_target_this_turn')) {
+      var _xrPillColor = _xRebuildSystem.engine.getFlagValue('pill_taken_this_turn');
+      var _xrPillRule = (rs.pill_rules || {})[_xrPillColor] || {};
+      var _xrPillFx = _xRebuildSystem.engine.getFlagValue('pill_descriptor_effects_present') || [];
+      var _xrPillMod = _xRebuildSystem.engine.getFlagValue('pill_descriptor_body_modifier_present') || null;
+      var _xrTxNeeded = !_xrPillRule.no_form_change ||
+        (_xrPillFx && (_xrPillFx.indexOf('bimbo') >= 0 || _xrPillFx.indexOf('pinup') >= 0 || _xrPillFx.indexOf('surrogate') >= 0));
+      if (_xrTxNeeded && !state._pill_descriptor_this_turn) {
+        state._pill_descriptor_this_turn = {
+          color: _xrPillColor,
+          body_modifier: _xrPillMod || state._pending_body_modifier || null,
+          effects: Array.isArray(_xrPillFx) ? _xrPillFx.slice() : [],
+        };
+        console.log('[XR] Backfilled _pill_descriptor_this_turn from rebuild flags: ' + JSON.stringify(state._pill_descriptor_this_turn));
       }
     }
   } catch (_xrErr) {
