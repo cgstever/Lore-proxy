@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.16",
+  "version": "7.7.17",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7629,9 +7629,9 @@ const REBUILD_OWNED_FIELDS = [
   '_hair_trigger_active', '_two_in_chamber_active', '_two_in_chamber_chain',
   '_side_fx_arousal_floor_bonus',
   '_orgasm_count', 'total_orgasm_count', 'sessions_completed',
-  '_breeder_orgasm_count', '_breeder_dc_current', '_breeder_compulsion', '_denial_frustration',
+  '_breeder_orgasm_count', '_breeder_dc_current', '_breeder_compulsion',
   '_surrogate_post_birth_turns', '_surrogate_arousal_floor',
-  'masculinity', '_bimbo_stage', '_psyche_stage',
+  '_bimbo_stage', '_psyche_stage',
   '_arousal_gate_dc',
   '_extra_fertile_active', '_extra_fertile_bonus',
   '_excitable_ovaries_active', '_excitable_ovaries_bonus',
