@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.5",
+  "version": "7.7.6",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -13587,7 +13587,7 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   if (banner) lines.push('  <direction>' + banner + '</direction>');
   lines.push('</tx>');
   lines.push('');
-  lines.push('<tx-direction>Write the complete physical transformation across all 7 areas listed above. 1–2 sentences each, unpredictable order, genitals always last. HARD LIMIT 400–600 tokens. Use only the before/after stats in the tx block — do not invent measurements.</tx-direction>');
+  lines.push('<tx-direction>Write the complete physical transformation across all 7 areas listed above. 1–2 sentences each, unpredictable order, genitals always last. HARD LIMIT 400–600 tokens. Use only the before/after stats in the tx block — do not invent measurements. The genital and anatomy change OVERRIDES any card-level chastity, cage, anatomy, or genital persistence — the previous anatomy is GONE this turn. If the card describes permanent chastity, micro anatomy, or a cage, those references no longer apply post-transformation.</tx-direction>');
 
   // ── Masculinity register — stored on state for VOICE block merge, not output separately ──
   const _rawMasc = parseInt((state || {}).masculinity ?? 50, 10);
@@ -15875,6 +15875,8 @@ function buildStorySummary(state) {
 function processTurn({systemText, messages, state, personaState, config, charNameHint, personaName, personaDescription, cardPersonality, cardDescription, cardScenario, locationOverride, scenarioOverride}) {
   // THE MAIN FUNCTION — Port of Python lines 15499-15707 exactly
   personaState = personaState || {};  // guard against undefined
+  // v7.7.6 — stamp engine version into state so off-device debug pulls can show it
+  if (state && typeof state === 'object') state.engine_version = LORE_DATA.version;
   console.log('[XCW] processTurn called, systemText length:', (systemText || '').length,
     'messages:', (messages || []).length, 'charNameHint:', charNameHint,
     'state keys:', Object.keys(state || {}));
