@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.21",
+  "version": "7.7.22",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -11659,9 +11659,16 @@ function findPillIngest(messagesRecent, rs, state) {
     const role = (msg.role || '').toLowerCase();
     if (!text) continue;
 
-    // ── Offer detection — scan every message for color+noun pair ──
+    // ── Offer detection — USER MESSAGES ONLY ──
+    // v7.7.22 — was scanning every message including AI narration. AI's
+    // "blue eyes flickering to the pink pill" matched the color+noun proximity
+    // regex (blue at position 0, pill 30 chars later) and the regex alternation
+    // returned 'blue' before 'pink'. That overwrote state._pending_pill from
+    // pink to blue mid-scene with no real pill being offered. User principle:
+    // pending should only grab a specific phrase from the user, not anything
+    // mentioned in narration. AI cannot introduce new pills.
     // Uses a fresh non-g regex so exec() always searches from position 0
-    if (offerRe) {
+    if (offerRe && role === 'user') {
       const m = offerRe.exec(text);
       if (m) {
         const color = ((m[1] || m[2]) || '').toLowerCase();
@@ -16455,6 +16462,20 @@ function processTurn({systemText, messages, state, personaState, config, charNam
         };
         console.log('[XR] Backfilled _pill_descriptor_this_turn from rebuild flags: ' + JSON.stringify(state._pill_descriptor_this_turn));
       }
+    }
+    // v7.7.22 — clear stale legacy state._pending_pill when rebuild's pill_pending
+    // flag is NOT active. Rebuild's flag has TTL=10 (auto-expires); state field
+    // doesn't, so it can stick after expiry. Also self-heals chats that got bad
+    // pending (e.g., from pre-v7.7.22 AI-text false positives).
+    // Don't clear if pill is active or pill_taken_this_turn fired (intake path).
+    if (!_xRebuildSystem.engine.isFlagActive('pill_pending') &&
+        !_xRebuildSystem.engine.isFlagActive('pill_taken_this_turn') &&
+        state._pending_pill && !state.active_pill) {
+      console.log('[XR] Clearing stale legacy _pending_pill=' + state._pending_pill +
+                  ' (rebuild pill_pending flag not active)');
+      delete state._pending_pill;
+      delete state._pending_pill_desc;
+      delete state._pending_pill_text;
     }
   } catch (_xrErr) {
     if (typeof console !== 'undefined' && console.warn) {
