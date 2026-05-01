@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.6",
+  "version": "7.7.7",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -13572,24 +13572,8 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
     _clothingStr = _clothingParts.length ? _clothingParts.join(', ') : outfitText;
   }
 
-  // ── Assemble TX block — data tags only, no prose ──
-  lines.push('<tx type="reference">');
-  lines.push('  <origin>' + _originParts.join(', ') + '</origin>');
-  lines.push('  <target>' + _targetParts.join(', ') + '</target>');
-  if (color === 'blue') {
-    lines.push('  <areas>height, frame, body shape, chest, body hair, face, voice, genitals</areas>');
-  } else {
-    lines.push('  <areas>height, frame, body shape, chest, hair, face, voice, genitals</areas>');
-  }
-  if (_clothingStr) lines.push('  <clothing>' + _clothingStr + '</clothing>');
-  // Tag intentionally named <direction> (not <pill>): the model should see
-  // a direction-of-change instruction without any hint of a backend system.
-  if (banner) lines.push('  <direction>' + banner + '</direction>');
-  lines.push('</tx>');
-  lines.push('');
-  lines.push('<tx-direction>Write the complete physical transformation across all 7 areas listed above. 1–2 sentences each, unpredictable order, genitals always last. HARD LIMIT 400–600 tokens. Use only the before/after stats in the tx block — do not invent measurements. The genital and anatomy change OVERRIDES any card-level chastity, cage, anatomy, or genital persistence — the previous anatomy is GONE this turn. If the card describes permanent chastity, micro anatomy, or a cage, those references no longer apply post-transformation.</tx-direction>');
-
-  // ── Masculinity register — stored on state for VOICE block merge, not output separately ──
+  // ── Masculinity register — character-attitude framing, surfaced as <reaction-register> in tx ──
+  // (computed up here in v7.7.7 so it can be embedded inside <tx>; also stored on state for voice-block merge)
   const _rawMasc = parseInt((state || {}).masculinity ?? 50, 10);
   const _wiBand = _masculinityBand(_rawMasc);
   var _wiRegister;
@@ -13605,6 +13589,30 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
     _wiRegister = 'This character welcomes this — the body is finally matching what was already inside. Write the relief and intensity through their specific way of experiencing joy and completion.';
   }
   if (state) state._tx_register = _wiRegister;
+
+  // ── Assemble TX block — engine declares facts, character voice writes the scene ──
+  // v7.7.7: surface txPhysical (body-path guide, was computed and dropped) + _tx_register (was XML attr, now first-class element)
+  lines.push('<tx type="reference">');
+  lines.push('  <origin>' + _originParts.join(', ') + '</origin>');
+  lines.push('  <target>' + _targetParts.join(', ') + '</target>');
+  if (color === 'blue') {
+    lines.push('  <areas>height, frame, body shape, chest, body hair, face, voice, genitals</areas>');
+  } else {
+    lines.push('  <areas>height, frame, body shape, chest, hair, face, voice, genitals</areas>');
+  }
+  if (_clothingStr) lines.push('  <clothing>' + _clothingStr + '</clothing>');
+  if (banner) lines.push('  <direction>' + banner + '</direction>');
+  // Body-path guide — specific narrative for this exact origin→target body transition.
+  // Lifted from rs.transformation_physical[color][txBodyPath]; was previously computed and dropped.
+  if (txPhysical) lines.push('  <body-path-guide>' + txPhysical + '</body-path-guide>');
+  // Reaction register — character-disposition framing for HOW they relate to the change emotionally.
+  if (_wiRegister) lines.push('  <reaction-register>' + _wiRegister + '</reaction-register>');
+  // Override clause — engine state wins over card-level persistence claims.
+  lines.push('  <override>The new body is the only body that exists from this turn forward. Previous anatomy, gear, chastity devices, and any "permanent" body claims from the card no longer apply.</override>');
+  lines.push('</tx>');
+  lines.push('');
+  // Voice-led tx-direction — engine sets WHAT must end up true; character voice owns HOW it\'s narrated.
+  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The body-path-guide describes what physically happens during this specific transition; the reaction-register describes how the character should relate to the change emotionally. Use both as reference, then narrate the experience the way THIS character would experience and express it — through their mannerisms, dialect, and natural turn-length. Don\'t list body parts. Don\'t produce a paragraph per area. The body MUST end as the target listed above. HOW you narrate it is yours.</tx-direction>');
 
   return _stripEffectNames(lines.join('\n'));
 }
@@ -14467,6 +14475,13 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
       var targetSex2 = pRuleNow.form_sex || 'unknown';
       txLines.push('<user-transformation phase="ongoing" target-sex="' + _xmlAttr(targetSex2) + '" subject="user"/>');
     }
+  }
+
+  // v7.7.7 — capture the assembled TX block as state._priority_directive_this_turn
+  // so processTurn can emit it as turnResult.priorityDirective for the extension to
+  // append at message[-1] on priority turns. Lore owns the prose; extension stays generic.
+  if (state) {
+    state._priority_directive_this_turn = (_isTxTurn && txLines.length) ? txLines.join('\n') : null;
   }
 
   // ── Markdown sections ──
@@ -16386,6 +16401,10 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     // v6.5.213: include _deferred_tx_archive so deferred TX first-gen also gets priority
     recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive) ? 1 : 3,
     priorityInjection: !!(state._pill_descriptor_this_turn || state._deferred_transformation || state._deferred_tx_archive),
+    // v7.7.7 — engine-owned priority append text (the <transformation> block + voice-led tx-direction).
+    // Extension v2.0.7+ appends this at message[-1] on priority turns; falsy = no append.
+    // Keeps the extension lore-agnostic — all TX prose lives here in the lore module.
+    priorityDirective: state._priority_directive_this_turn || null,
     // Persona block separate so buildScenePage places it at top as reference-only
     personaBlock: _lastPersonaBlock || null,
     // Card strip patterns — engine tells extension what to remove from card (Layer 1)
