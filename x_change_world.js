@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.22",
+  "version": "7.7.23",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6794,7 +6794,10 @@ const PILL_NOUNS = ['pill','dose','tablet','capsule','xchange','x-change','liqui
 const INTAKE_VERBS = ['take','takes','took','taking','taken','swallow','swallows','swallowed','swallowing','pop','pops','popped','popping','gulp','gulps','gulped','gulping','chew','chews','chewed','chewing','consume','consumes','consumed','consuming','ingest','ingests','ingested','ingesting','dissolve','dissolves','dissolved','dissolving','drink','drinks','drank','drunk','drinking','sip','sips','sipped','sipping','chug','chugs','chugged','chugging'];
 const COVERT_VERBS = ['laced','spiked','slipped','drugged','dosed'];
 const DESCRIPTOR_EFFECTS = ['breeder','bimbo','pinup','denial','bull','compliant','submissive','psyche','surrogate'];
-const BODY_MODIFIERS = ['petite','athletic','curvy','voluptuous','average','slender'];
+// v7.7.23 — full list matches LORE_DATA.body_modifiers.{pink|purple|blue|red|green}.modifiers.
+// Was missing 'slim','busty','stocky' which appear in the data; their absence here meant
+// "pink slim pinup breeder pill" failed the strict offer pattern.
+const BODY_MODIFIERS = ['petite','slim','athletic','average','curvy','busty','voluptuous','stocky','slender'];
 const PILL_RULES = {
   pink:   {form_sex:'female',genitals:'vagina_only',preg_eligible:true,no_form_change:false,valid_birthSex:'male',masculinity_sex:-3,masculinity_orgasm:-2},
   blue:   {form_sex:'male',genitals:'penis_only',preg_eligible:false,no_form_change:false,valid_birthSex:'female',masculinity_sex:+3,masculinity_orgasm:-1},
@@ -6808,12 +6811,28 @@ const PILL_RULES = {
 // ────────────────────────────────────────────────────────────────────
 
 const PROXIMITY_CHARS = 40;
+// v7.7.23 — STRICT pattern. Must be: color + (optional body) + 1-4 effects + pill_noun
+// all space-adjacent. The old loose proximity match (color within 40 chars of pill noun
+// in either direction) caused false positives on phrases like "blue eyes flickering to
+// the pink pill" — the regex saw 'blue' adjacent enough to 'pill' and overwrote pending.
+// Now an offer requires the full descriptor: e.g. "pink slim pinup breeder pill",
+// "pink breeder pill", or "blue bull pill". Color and pill noun alone are rejected.
 function detectPillColor(text, engine) {
   if (!text || typeof text !== 'string') return null;
-  const re = new RegExp('\\b('+PILL_COLORS.join('|')+')\\b[\\s\\S]{0,'+PROXIMITY_CHARS+'}\\b(?:'+PILL_NOUNS.join('|')+')\\b|\\b(?:'+PILL_NOUNS.join('|')+')\\b[\\s\\S]{0,'+PROXIMITY_CHARS+'}\\b('+PILL_COLORS.join('|')+')\\b','i');
+  const colorAlt   = PILL_COLORS.join('|');
+  const nounAlt    = PILL_NOUNS.join('|');
+  const effectsAlt = DESCRIPTOR_EFFECTS.join('|');
+  const bodyAlt    = BODY_MODIFIERS.join('|');
+  const re = new RegExp(
+    '\\b(' + colorAlt + ')\\b' +
+    '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
+    '(?:(?:' + effectsAlt + ')\\s+){1,4}' +
+    '\\b(?:' + nounAlt + ')\\b',
+    'i'
+  );
   const m = re.exec(text);
   if (!m) return null;
-  const color = (m[1] || m[2]).toLowerCase();
+  const color = (m[1] || '').toLowerCase();
   engine.setFlag('pill_color_detected', { ttl: 1, value: color });
   return color;
 }
@@ -11637,12 +11656,25 @@ function findPillIngest(messagesRecent, rs, state) {
   }
 
   // Build offer regex fresh each call — NOT stateful, uses test() not exec() with lastIndex
+  // v7.7.23 — STRICT pattern. Must be: color + (optional body) + 1-4 effects + pill_noun
+  // all space-adjacent. Was loose proximity match (color within 40 chars of noun, either
+  // direction) which fired on AI's "blue eyes flickering to the pink pill" because 'blue'
+  // was within 40 chars of 'pill'. Now an offer requires the user to type the full
+  // descriptor like "pink slim pinup breeder pill" — color + body + effects + noun.
+  // Effect is REQUIRED (>=1) — color+pill alone is rejected. Body type optional.
   const ep = rs._raw_event_patterns || {};
   const colors = (ep.pill_colors || []).map(c => c.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
   const nouns  = (ep.pill_nouns  || []).map(n => n.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
-  const prox   = ep.pill_color_noun_proximity || 40;
+  const effectsAlt = ['breeder','bimbo','pinup','denial','bull','compliant','submissive','psyche','surrogate'].join('|');
+  const bodyAlt    = ['petite','slim','athletic','average','curvy','busty','voluptuous','stocky','slender'].join('|');
   const offerRe = (colors && nouns)
-    ? new RegExp('\\b(' + colors + ')\\b.{0,' + prox + '}\\b(?:' + nouns + ')\\b|\\b(?:' + nouns + ')\\b.{0,' + prox + '}\\b(' + colors + ')\\b', 'i')
+    ? new RegExp(
+        '\\b(' + colors + ')\\b' +
+        '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +     // optional body type
+        '(?:(?:' + effectsAlt + ')\\s+){1,4}' +  // 1-4 effects (required)
+        '\\b(?:' + nouns + ')\\b',               // pill noun
+        'i'
+      )
     : null;
 
   let pendingColor     = (state || {})._pending_pill || null;
