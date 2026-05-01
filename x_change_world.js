@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.15",
+  "version": "7.7.16",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7612,14 +7612,23 @@ registerMasculinity(engine);
 
 // v7.7.0 — fields the rebuild owns. After eval, these get copied from shadow
 // back to realState. Legacy's writes to these fields are overwritten.
+// v7.7.16 — pulled effect_resistance + related counters and 'arousal'.
+// Rebuild's processAllEffectResistance only fires on detected_sex_engagement
+// and detected_male_climaxed; legacy's _processEffectResistance fires on
+// arousal_spike_60 every turn during sex (superset). Letting rebuild "own"
+// these fields meant rebuild copied its untouched shadow back, wiping legacy's
+// per-turn erosion writes — so R stayed pinned at 100 through entire sex
+// scenes, breeder never progressed. Same shape for 'arousal': legacy pumps it
+// in many places (clothing, scene, climax flow); rebuild only resets on
+// orgasm. Until rebuild's per-turn loop covers these, legacy is authoritative.
 const REBUILD_OWNED_FIELDS = [
-  'active_pill', 'active_effects', 'effect_resistance', '_effect_low_water',
+  'active_pill', 'active_effects',
   'form', '_pending_body_modifier',
   'pregnancy', '_conception_turn', 'pregnancies_completed',
   'session_orgasm_count', 'session_fail_count', 'active_side_effects',
   '_hair_trigger_active', '_two_in_chamber_active', '_two_in_chamber_chain',
   '_side_fx_arousal_floor_bonus',
-  '_orgasm_count', 'total_orgasm_count', 'sessions_completed', 'arousal',
+  '_orgasm_count', 'total_orgasm_count', 'sessions_completed',
   '_breeder_orgasm_count', '_breeder_dc_current', '_breeder_compulsion', '_denial_frustration',
   '_surrogate_post_birth_turns', '_surrogate_arousal_floor',
   'masculinity', '_bimbo_stage', '_psyche_stage',
@@ -7627,8 +7636,6 @@ const REBUILD_OWNED_FIELDS = [
   '_extra_fertile_active', '_extra_fertile_bonus',
   '_excitable_ovaries_active', '_excitable_ovaries_bonus',
   '_confirmed_submissive_active',
-  '_effect_resist_fail_count', '_effect_resist_streak_count',
-  '_effect_resist_streak_bonus', '_effect_resist_dc',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
