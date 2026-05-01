@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.7",
+  "version": "7.7.8",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7268,6 +7268,12 @@ function registerPregnancy(engine, opts) {
 function _isMotherhoodMode(state, engine) {
   if (!state.pregnancy || !state.pregnancy.confirmed) return false;
   if (state._conception_turn === engine.getCurrentTurn()) return false;
+  // v7.7.8 — motherhood mode is surrogate-only. Breeder-path pregnancy keeps the
+  // breeder mechanic live with maternal bonding layered on top, NOT replaced.
+  // Liya's arc (Confessions of a Breeder) confirms: pregnant breeders keep craving
+  // creampies; the engine should NOT suppress breeder narrative for breeder-path pregnancy.
+  var fx = state.active_effects || [];
+  if (fx.indexOf('surrogate') < 0) return false;
   return true;
 }
 function _hasBreederOrSurrogate(state) { const fx = state.active_effects || []; return fx.includes('breeder') || fx.includes('surrogate'); }
@@ -9965,7 +9971,11 @@ function _isMotherhoodMode(state) {
   var conception = state._conception_turn;
   if (conception == null) return false;
   var current = parseInt(state.turn || 0, 10);
-  return current > conception;
+  if (current <= conception) return false;
+  // v7.7.8 — motherhood mode is surrogate-only. Breeder-path pregnancy keeps the
+  // breeder mechanic live with maternal bonding layered on top, NOT replaced.
+  var fx = state.active_effects || [];
+  return fx.indexOf('surrogate') >= 0;
 }
 
 function getArousalFloor(state, rs) {
