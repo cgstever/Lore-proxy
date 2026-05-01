@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.12",
+  "version": "7.7.13",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6980,15 +6980,20 @@ function registerPillIntake(engine) {
    'pill_taken_this_turn','pill_persona_target_this_turn',
    'pill_invalid_for_gender','pill_already_active_same_color','pill_just_transformed']
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
-  engine.registerFlag('pill_pending', { type:'turn_based_reset', ttl:3 });
+  engine.registerFlag('pill_pending', { type:'turn_based_reset', ttl:10 });
 
   // v7.7.1 — bundle descriptor info into pill_pending so cross-turn consume
   // doesn't lose effects (e.g. "pink breeder pill" turn N, "she swallows it"
   // turn N+2). Without this, pill_descriptor_effects_present (TTL=1) expires
   // before consume and effects never activate.
+  // v7.7.13 — TTL bumped 3 → 10. Slow-roll consent-elicitation scenes (Cody
+  // offers pill, asks 4-7 questions about character preferences, then user takes
+  // it) were exhausting the 3-turn window before intake. 10 turns covers any
+  // realistic conversational pacing while still letting pending expire if user
+  // genuinely moves on. Cleared earlier by consume or by overwrite (D14).
   engine.registerHandler('setPillPending', state => {
     engine.setFlag('pill_pending', {
-      ttl: 3,
+      ttl: 10,
       value: {
         color: engine.getFlagValue('pill_color_detected'),
         effects: engine.getFlagValue('pill_descriptor_effects_present') || null,
