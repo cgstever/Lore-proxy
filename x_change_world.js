@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.9",
+  "version": "7.7.10",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -2511,7 +2511,7 @@ const LORE_DATA =
         "swallow(?:s|ed|ing)?\\s+every\\s+(?:drop|bit)\\b",
         "mouth\\s+full\\s+of\\s+(?:his\\s+)?cum\\b"
       ],
-      "source": "last_assistant"
+      "source": "last_user"
     },
     "antidote_taken": {
       "patterns": [
@@ -2548,7 +2548,7 @@ const LORE_DATA =
         "\\bsecond trimester\\b",
         "\\bvisibly pregnant\\b"
       ],
-      "source": "all",
+      "source": "last_user",
       "requires_flag": "pregnancy_confirmed"
     },
     "pregnancy_stage_late": {
@@ -2561,7 +2561,7 @@ const LORE_DATA =
         "\\bany day now\\b",
         "\\bwaddling\\b"
       ],
-      "source": "all",
+      "source": "last_user",
       "requires_flag": "pregnancy_confirmed"
     },
     "directive": {
