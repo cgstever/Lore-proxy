@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.18",
+  "version": "7.7.19",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6870,10 +6870,16 @@ const MALE_ORGASM_EXTERNAL_PATTERNS = [
   /\bcame?\s+(?:in|on|to)\s+(?:my|her|your)\s+mouth\b/i,
   /\bI(?:'ve|'ll|'m| just| ?will| ?am)?\s+(?:cum|came|finished|climaxed)\b/i,
 ];
+// v7.7.18 — broadened to catch oral-finish phrasings that didn't anchor on
+// swallow/gulp/drink: "down my throat", "throat works around", "tasting it",
+// "filled my mouth", "into my mouth + swallow".
 const CUM_SWALLOWED_PATTERNS = [
-  /\bswallow\w*[\s\S]{0,40}\b(?:cum|seed|load|jizz)\b/i,
+  /\bswallow\w*[\s\S]{0,40}\b(?:cum|seed|load|jizz|hot|salt|warm|him)\b/i,
   /\b(?:cum|seed|load|jizz)\b[\s\S]{0,40}\bswallow\w*/i,
-  /\b(?:gulp|drink)\w*[\s\S]{0,30}?\b(?:cum|seed|load|jizz)\b/i,
+  /\b(?:gulp|drink|suck)\w*[\s\S]{0,30}?\b(?:cum|seed|load|jizz|down|him|it)\b/i,
+  /\b(?:cum|seed|load|jizz|hot|salt)\w*[\s\S]{0,40}\bdown\s+(?:my|her)\s+throat\b/i,
+  /\bthroat\s+(?:work\w*|swallow\w*|gulp\w*|tighten\w*)\b[\s\S]{0,30}\b(?:cum|seed|load|him|it|around)/i,
+  /\b(?:tasting|tongue\s+heavy)\b[\s\S]{0,30}\b(?:cum|seed|salt|him|it)\b/i,
 ];
 // v7.7.18 — broadened to catch ongoing-sex phrasings (plunge, pump, pound, hold there,
 // pull back, withdraw, buck) that previously failed to fire detected_sex_engagement
@@ -6916,11 +6922,16 @@ function detectSexEngagement(text, engine) {
   return false;
 }
 
+// v7.7.18 — added trimester / showing / popping / noticeably-pregnant phrasings.
 const PREGNANCY_STAGE_SHOWING_PATTERNS = [
   /\bbab(?:y|ies)\s+(?:bump|belly)/i,
-  /\bshow(?:s|ed|ing)\s+(?:through|already|now)/i,
-  /\b(?:swollen|round(?:ed)?|protruding)\s+belly/i,
-  /\bbelly\s+(?:is|has)\s+(?:start|begin|round|swell|grow)\w*/i,
+  /\bshow(?:s|ed|ing)\s+(?:through|already|now)?/i,
+  /\b(?:swollen|round(?:ed)?|protruding|popping|distended)\s+belly/i,
+  /\bbelly\s+(?:is|has|that's|that\s+is)\s+(?:start|begin|round|swell|grow|stretch|thicken|popp|push)\w*/i,
+  /\b(?:second|2nd)\s+trimester\b/i,
+  /\b(?:noticeably|visibly|obviously)\s+pregnant\b/i,
+  /\b(?:pop|popping|popped)(?:\s+out|\s+through)\b/i,
+  /\bbump\s+(?:start\w*|begin\w*|grow\w*|push\w*|show\w*)/i,
 ];
 const PREGNANCY_STAGE_LATE_PATTERNS = [
   /\b(?:due|ready)\s+(?:any\s+day|to\s+(?:pop|burst|deliver))/i,
@@ -6928,12 +6939,22 @@ const PREGNANCY_STAGE_LATE_PATTERNS = [
   /\b(?:huge|massive|enormous)\s+(?:belly|bump)/i,
   /\b(?:waddl|nest)(?:e|ed|ing|es)\b/i,
 ];
+// v7.7.18 — added c-section, induced labor, newborn cries, umbilical, "delivered her",
+// water-breaking, crowning, and afterbirth phrasings.
 const BIRTH_PATTERNS = [
   /\b(?:gives?|gave|giving)\s+birth\b/i,
-  /\b(?:push(?:es|ed|ing)?|deliver(?:s|ed|ing)?)\s+(?:the\s+)?bab(?:y|ies)\b/i,
-  /\blabor\s+(?:starts?|started|begin\w*|came)\b/i,
-  /\bbab(?:y|ies)\s+(?:is|are|was|were)\s+born\b/i,
-  /\bcontractions?\s+(?:start|begin|come|hit)/i,
+  /\b(?:push(?:es|ed|ing)?|deliver(?:s|ed|ing)?)\s+(?:the\s+|her\s+|his\s+)?(?:bab(?:y|ies)|child(?:ren)?|infant)\b/i,
+  /\blabor\s+(?:starts?|started|begin\w*|came|hits?|hit)\b/i,
+  /\bbab(?:y|ies)\s+(?:is|are|was|were|finally)\s+(?:born|delivered|out)\b/i,
+  /\bcontractions?\s+(?:start|begin|come|hit|tear)/i,
+  /\b(?:c-?section|cesarean|caesarean)\b/i,
+  /\b(?:induc\w+\s+labor|labor\s+induc\w+)\b/i,
+  /\bnewborn\b/i,
+  /\bumbilical\b/i,
+  /\bcrown(?:s|ed|ing)\b/i,
+  /\bwater(?:s)?\s+(?:break|broke|broken|breaking)\b/i,
+  /\bafterbirth|placenta\b/i,
+  /\bdeliver(?:s|ed|ing)?\s+(?:her|him|the)\b/i,
 ];
 function detectPregnancyStageShowing(text, engine) {
   if (!text || typeof text !== 'string') return false;
