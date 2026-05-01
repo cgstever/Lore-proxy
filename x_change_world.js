@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.8",
+  "version": "7.7.9",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7649,7 +7649,13 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
     return;
   }
   engine.tick();
-  const text = (lastUserText || '') + '\n' + (lastAssistantText || '');
+  // v7.7.9 — detectors scan ONLY user message, not assistant text.
+  // Reason: assistant narration (e.g. Hamzah: "I swallow", "clenching empty...in anxious devotion")
+  // was triggering false first-person persona-routing AND false creampie detection (regex matched
+  // 'empty'+'in' from Hamzah's prose). User input is canonical for what happens in the scene;
+  // AI narration describes what happens AFTER engine processes the user's message, so should not
+  // move state. If the user wants something to happen, it must appear in their message.
+  const text = (lastUserText || '');
   detectPillColor(text, engine);
   detectPillIntakeVerb(text, engine);
   detectPillCovertIntake(text, engine);
