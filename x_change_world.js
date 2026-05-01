@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.17",
+  "version": "7.7.18",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6855,10 +6855,14 @@ function detectAntidote(text, engine) {
   return true;
 }
 
+// v7.7.18 — added pattern for "came deep" / "filled her" / "emptied himself" without
+// explicit prepositional anchor. Without this, common creampie phrasings missed detection
+// during sustained sex when the user message implied internal ejaculation by context.
 const CREAMPIE_PATTERNS = [
   /\bcreampie(?:s|d)?\b/i,
   /\b(?:cum|come|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill|finish)\w*[\s\S]{0,60}\b(?:inside|into|in|womb|uterus|cervix|her\s+pussy|your\s+pussy)\b/i,
   /\b(?:inside|into|womb|uterus|cervix)\b[\s\S]{0,60}\b(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)\w*\b/i,
+  /\b(?:came|cum|finish\w*|empt(?:y|ied|ying)|fill\w*|breed\w*|seed\w*)[\s\S]{0,15}\b(?:deep|hard|her|me|you|himself|herself)\b[\s\S]{0,30}\b(?:bare|raw|deep|inside|her\s+core|deep\s+inside|with(?:\s+a|\s+everything))/i,
 ];
 const MALE_ORGASM_EXTERNAL_PATTERNS = [
   /\bpull(?:s|ed)?\s+out\b[\s\S]{0,40}\b(?:cum|came|finish|climax)\w*/i,
@@ -6871,12 +6875,17 @@ const CUM_SWALLOWED_PATTERNS = [
   /\b(?:cum|seed|load|jizz)\b[\s\S]{0,40}\bswallow\w*/i,
   /\b(?:gulp|drink)\w*[\s\S]{0,30}?\b(?:cum|seed|load|jizz)\b/i,
 ];
+// v7.7.18 — broadened to catch ongoing-sex phrasings (plunge, pump, pound, hold there,
+// pull back, withdraw, buck) that previously failed to fire detected_sex_engagement
+// for many turns of active penetration.
 const SEX_ENGAGEMENT_PATTERNS = [
-  /\b(?:thrust|push|slide|sink|drive|enter|penetrat)\w*[\s\S]{0,30}\b(?:into|inside|in\b)/i,
+  /\b(?:thrust|push|slide|sink|drive|enter|penetrat|plunge|bury|pump|stroke|pound|hammer|piston|buck)\w*[\s\S]{0,30}\b(?:into|inside|in\b|deep|deeper|her|me|you)/i,
   /\b(?:fuck|fucking|fucked|fucks)\b/i,
   /\b(?:ride|riding|rode|rides)\b[\s\S]{0,20}\b(?:cock|dick|him|his)\b/i,
-  /\b(?:grind|grinding|grinds|grinded)\b[\s\S]{0,20}\b(?:against|on|onto)\b/i,
-  /\b(?:cock|dick|shaft)\b[\s\S]{0,30}\b(?:inside|filling|stretching|spreading)/i,
+  /\b(?:grind|grinding|grinds|grinded)\b[\s\S]{0,20}\b(?:against|on|onto|hips)\b/i,
+  /\b(?:cock|dick|shaft|girth|length)\b[\s\S]{0,30}\b(?:inside|filling|stretching|spreading|impal|buried|deep)/i,
+  /\b(?:hold|holding|held|pull|pulls|pulling|pulled|withdraw|withdraws|withdrew|rock|rocks|rocking)\b[\s\S]{0,30}\b(?:inside|deep|cervix|pussy|her\s+entrance|tip)/i,
+  /\b(?:cervix|pussy|entrance|opening|core)\b[\s\S]{0,30}\b(?:clench|stretch|grip|squeeze|adjust|takes|swallow|hug)\w*/i,
 ];
 function detectCreampie(text, engine) {
   if (!text || typeof text !== 'string') return false;
@@ -7612,29 +7621,40 @@ registerMasculinity(engine);
 
 // v7.7.0 — fields the rebuild owns. After eval, these get copied from shadow
 // back to realState. Legacy's writes to these fields are overwritten.
-// v7.7.16 — pulled effect_resistance + related counters and 'arousal'.
-// Rebuild's processAllEffectResistance only fires on detected_sex_engagement
-// and detected_male_climaxed; legacy's _processEffectResistance fires on
-// arousal_spike_60 every turn during sex (superset). Letting rebuild "own"
-// these fields meant rebuild copied its untouched shadow back, wiping legacy's
-// per-turn erosion writes — so R stayed pinned at 100 through entire sex
-// scenes, breeder never progressed. Same shape for 'arousal': legacy pumps it
-// in many places (clothing, scene, climax flow); rebuild only resets on
-// orgasm. Until rebuild's per-turn loop covers these, legacy is authoritative.
+// v7.7.16/.17 — pulled effect_resistance, arousal, masculinity, _denial_frustration
+// after discovering rebuild's per-turn coverage was narrower than legacy's, so
+// rebuild's pre-legacy snapshot wiped legacy's per-turn writes.
+// v7.7.18 — pulled the rest of the same-shape clobber pairs surfaced by audit:
+//   - session_orgasm_count, session_fail_count, _orgasm_count, total_orgasm_count
+//     legacy increments inside processEvents (line 12522-12524, 12548, 12579);
+//     rebuild only on character_orgasm_this_turn via arousalGateOrgasmCheck (different path)
+//   - _arousal_gate_dc — legacy ticks every gate roll (line 10095/10120/etc); rebuild
+//     only writes inside rollConfirmedSubmissiveAcquisition (rare event)
+//   - _two_in_chamber_chain — legacy increments on every orgasm (line 12562); rebuild
+//     never writes post-init (only rebuild's clearTransientSideEffects deletes)
+//   - _side_fx_arousal_floor_bonus — legacy maintains via setArousal paths (10241/10337);
+//     rebuild only sets on hair_trigger acquisition
+//   - _excitable_ovaries_bonus, _extra_fertile_bonus — legacy increments per orgasm
+//     (line 12528, 10304); rebuild only on character_orgasm or acquisition
+//   - pregnancy, _conception_turn — legacy at line 11977 sets _conception_turn via
+//     legacy roll-set-flag path (set_flag plumbing); rebuild's pregnancy_conception_roll
+//     fires only on rebuild's flag system. Diverging plumbing → rebuild's shadow is
+//     missing both, copy-back DELETES (line ~7708 else-branch).
+// Rule of thumb: only keep a field in REBUILD_OWNED_FIELDS if rebuild fully covers
+// every per-turn write path that legacy has. Anything legacy ticks per-turn while
+// rebuild only fires on rare events MUST be pulled until rebuild's coverage matches.
 const REBUILD_OWNED_FIELDS = [
   'active_pill', 'active_effects',
   'form', '_pending_body_modifier',
-  'pregnancy', '_conception_turn', 'pregnancies_completed',
-  'session_orgasm_count', 'session_fail_count', 'active_side_effects',
-  '_hair_trigger_active', '_two_in_chamber_active', '_two_in_chamber_chain',
-  '_side_fx_arousal_floor_bonus',
-  '_orgasm_count', 'total_orgasm_count', 'sessions_completed',
+  'pregnancies_completed',
+  'active_side_effects',
+  '_hair_trigger_active', '_two_in_chamber_active',
+  'sessions_completed',
   '_breeder_orgasm_count', '_breeder_dc_current', '_breeder_compulsion',
   '_surrogate_post_birth_turns', '_surrogate_arousal_floor',
   '_bimbo_stage', '_psyche_stage',
-  '_arousal_gate_dc',
-  '_extra_fertile_active', '_extra_fertile_bonus',
-  '_excitable_ovaries_active', '_excitable_ovaries_bonus',
+  '_extra_fertile_active',
+  '_excitable_ovaries_active',
   '_confirmed_submissive_active',
 ];
 const REBUILD_OWNED_FLAGS = [
