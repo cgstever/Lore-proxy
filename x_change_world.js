@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.23",
+  "version": "7.7.24",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6801,7 +6801,7 @@ const BODY_MODIFIERS = ['petite','slim','athletic','average','curvy','busty','vo
 const PILL_RULES = {
   pink:   {form_sex:'female',genitals:'vagina_only',preg_eligible:true,no_form_change:false,valid_birthSex:'male',masculinity_sex:-3,masculinity_orgasm:-2},
   blue:   {form_sex:'male',genitals:'penis_only',preg_eligible:false,no_form_change:false,valid_birthSex:'female',masculinity_sex:+3,masculinity_orgasm:-1},
-  purple: {form_sex:'female',genitals:'penis_only_no_vagina',preg_eligible:false,no_form_change:false,valid_birthSex:'female',masculinity_sex:+2,masculinity_orgasm:-1},
+  purple: {form_sex:'female',genitals:'penis_only_no_vagina',preg_eligible:false,no_form_change:false,valid_birthSex:['male','female'],masculinity_sex:+2,masculinity_orgasm:-1},
   green:  {form_sex:'female',genitals:'vagina_only',preg_eligible:true,no_form_change:true,valid_birthSex:'female',masculinity_sex:0,masculinity_orgasm:-1},
   red:    {form_sex:'male',genitals:'penis_only',preg_eligible:false,no_form_change:true,valid_birthSex:'male',masculinity_sex:0,masculinity_orgasm:-1},
 };
@@ -7068,7 +7068,11 @@ function registerPillIntake(engine) {
   engine.registerHandler('checkPillValidity', state => {
     const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
     const r = PILL_RULES[c]; if (!r) return;
-    if (t.birthSex && t.birthSex !== r.valid_birthSex) engine.setFlag('pill_invalid_for_gender', { ttl:1 });
+    // v7.7.24 — valid_birthSex can be a string or array of strings (e.g., purple
+    // accepts both 'male' and 'female' bio sex — taker keeps cock + balls and
+    // gains female body regardless of starting sex).
+    const validSexes = Array.isArray(r.valid_birthSex) ? r.valid_birthSex : [r.valid_birthSex];
+    if (t.birthSex && !validSexes.includes(t.birthSex)) engine.setFlag('pill_invalid_for_gender', { ttl:1 });
   });
   engine.registerHandler('applyPill', state => {
     const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
