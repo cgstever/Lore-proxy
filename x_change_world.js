@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.24",
+  "version": "7.7.25",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6811,28 +6811,37 @@ const PILL_RULES = {
 // ────────────────────────────────────────────────────────────────────
 
 const PROXIMITY_CHARS = 40;
-// v7.7.23 — STRICT pattern. Must be: color + (optional body) + 1-4 effects + pill_noun
-// all space-adjacent. The old loose proximity match (color within 40 chars of pill noun
-// in either direction) caused false positives on phrases like "blue eyes flickering to
-// the pink pill" — the regex saw 'blue' adjacent enough to 'pill' and overwrote pending.
-// Now an offer requires the full descriptor: e.g. "pink slim pinup breeder pill",
-// "pink breeder pill", or "blue bull pill". Color and pill noun alone are rejected.
+// v7.7.25 — STRICT color-aware pattern.
+//   pink/blue/purple ALLOW optional body modifier (transformation pills change body shape)
+//   red/green REJECT body modifier (no_form_change=true, body word is invalid)
+//
+// Two-branch regex enforces this at parse time. A phrase like "red stocky bull pill"
+// matches NEITHER branch (red doesn't accept body, "stocky bull" fails the no-body
+// branch) and is correctly treated as not-a-valid-offer.
+//
+// v7.7.23 — STRICT pattern: color + (optional body) + 1-4 effects + pill_noun
+// all space-adjacent. Rejects "blue eyes flickering to the pink pill" false-positives.
 function detectPillColor(text, engine) {
   if (!text || typeof text !== 'string') return null;
-  const colorAlt   = PILL_COLORS.join('|');
   const nounAlt    = PILL_NOUNS.join('|');
   const effectsAlt = DESCRIPTOR_EFFECTS.join('|');
   const bodyAlt    = BODY_MODIFIERS.join('|');
-  const re = new RegExp(
-    '\\b(' + colorAlt + ')\\b' +
+  // Branch A — transformation pills (pink/blue/purple): optional body modifier
+  const branchA =
+    '\\b(pink|blue|purple)\\b' +
     '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
     '(?:(?:' + effectsAlt + ')\\s+){1,4}' +
-    '\\b(?:' + nounAlt + ')\\b',
-    'i'
-  );
+    '\\b(?:' + nounAlt + ')\\b';
+  // Branch B — no-form-change pills (red/green): NO body modifier slot
+  const branchB =
+    '\\b(red|green)\\b' +
+    '\\s+(?:(?:' + effectsAlt + ')\\s+){1,4}' +
+    '\\b(?:' + nounAlt + ')\\b';
+  const re = new RegExp('(?:' + branchA + ')|(?:' + branchB + ')', 'i');
   const m = re.exec(text);
   if (!m) return null;
-  const color = (m[1] || '').toLowerCase();
+  // m[1] = pink/blue/purple capture; m[2] = red/green capture
+  const color = ((m[1] || m[2]) || '').toLowerCase();
   engine.setFlag('pill_color_detected', { ttl: 1, value: color });
   return color;
 }
@@ -6854,8 +6863,13 @@ function detectPillCovertIntake(text, engine) {
 }
 function detectPillDescriptor(text, engine) {
   if (!text || typeof text !== 'string') return null;
-  const fe = [];
+  let fe = [];
   for (const e of DESCRIPTOR_EFFECTS) if (new RegExp('\\b'+e+'\\b','i').test(text)) fe.push(e);
+  // v7.7.25 — pinup and bimbo cannot coexist. Bimbo's body overlay already
+  // covers what pinup would apply, plus bimbo adds the cognitive arc. If both
+  // appear in the descriptor, drop pinup and keep only bimbo (the user wanted
+  // the full conversion, not just the body without the mind).
+  if (fe.includes('bimbo') && fe.includes('pinup')) fe = fe.filter(x => x !== 'pinup');
   let fm = null;
   for (const m of BODY_MODIFIERS) if (new RegExp('\\b'+m+'\\b','i').test(text)) { fm = m; break; }
   if (fe.length) engine.setFlag('pill_descriptor_effects_present', { ttl: 1, value: fe });
@@ -7085,12 +7099,21 @@ function registerPillIntake(engine) {
   });
   engine.registerHandler('applyDescriptorEffects', state => {
     const t = _getPillTarget(engine, state);
-    const fx = engine.getFlagValue('pill_descriptor_effects_present') || [];
+    let fx = engine.getFlagValue('pill_descriptor_effects_present') || [];
     if (!fx.length) return;
     if (!t.active_effects) t.active_effects = [];
     if (!t.effect_resistance) t.effect_resistance = {};
     if (!t.flags) t.flags = {};
+    // v7.7.25 — final defense: pinup + bimbo can never both be in active_effects.
+    // If both are in this descriptor (or being added on top of an existing effect),
+    // drop pinup. Bimbo's overlay already supplies the bombshell body.
+    if (fx.includes('bimbo') && fx.includes('pinup')) fx = fx.filter(e => e !== 'pinup');
+    if (fx.includes('bimbo') && t.active_effects.includes('pinup')) {
+      t.active_effects = t.active_effects.filter(e => e !== 'pinup');
+    }
     for (const e of fx) {
+      // Skip pinup if bimbo already active on the target
+      if (e === 'pinup' && t.active_effects.includes('bimbo')) continue;
       if (t.active_effects.includes(e)) continue;
       t.active_effects.push(e);
       if (e === 'surrogate' && !t.flags._surrogate_pre_erode_done) {
@@ -11647,6 +11670,15 @@ function parsePillDescriptor(text, rs) {
     }
   }
 
+  // v7.7.25 — pinup and bimbo cannot coexist. Bimbo already triggers the
+  // bimbo body overlay (which is what pinup applies) AND the cognitive arc.
+  // If both keywords appear in the descriptor, drop pinup and keep only bimbo
+  // — the user's intent is "full conversion", and bimbo's body overlay covers
+  // the pinup look. This avoids redundant effect entries on state.active_effects.
+  if (result.effects.includes('bimbo') && result.effects.includes('pinup')) {
+    result.effects = result.effects.filter(e => e !== 'pinup');
+  }
+
   return result;
 }
 
@@ -11671,12 +11703,20 @@ function findPillIngest(messagesRecent, rs, state) {
   const nouns  = (ep.pill_nouns  || []).map(n => n.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
   const effectsAlt = ['breeder','bimbo','pinup','denial','bull','compliant','submissive','psyche','surrogate'].join('|');
   const bodyAlt    = ['petite','slim','athletic','average','curvy','busty','voluptuous','stocky','slender'].join('|');
+  // v7.7.25 — color-aware: pink/blue/purple ALLOW body modifier, red/green REJECT it.
+  // Two-branch regex enforces the no_form_change rule at parse time.
   const offerRe = (colors && nouns)
     ? new RegExp(
-        '\\b(' + colors + ')\\b' +
-        '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +     // optional body type
-        '(?:(?:' + effectsAlt + ')\\s+){1,4}' +  // 1-4 effects (required)
-        '\\b(?:' + nouns + ')\\b',               // pill noun
+        // Branch A — transformation pills (pink/blue/purple)
+        '(?:\\b(pink|blue|purple)\\b' +
+          '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
+          '(?:(?:' + effectsAlt + ')\\s+){1,4}' +
+          '\\b(?:' + nouns + ')\\b)' +
+        '|' +
+        // Branch B — no-form-change pills (red/green): no body modifier
+        '(?:\\b(red|green)\\b' +
+          '\\s+(?:(?:' + effectsAlt + ')\\s+){1,4}' +
+          '\\b(?:' + nouns + ')\\b)',
         'i'
       )
     : null;
@@ -12456,11 +12496,19 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
       for (var _pe = 0; _pe < _pillDescEffects.length; _pe++) {
         if (_mergedEffects.indexOf(_pillDescEffects[_pe]) === -1) _mergedEffects.push(_pillDescEffects[_pe]);
       }
+      // v7.7.25 — pinup + bimbo cannot coexist. Drop pinup if bimbo present.
+      if (_mergedEffects.indexOf('bimbo') >= 0 && _mergedEffects.indexOf('pinup') >= 0) {
+        _mergedEffects = _mergedEffects.filter(function(e){ return e !== 'pinup'; });
+      }
       state._pill_descriptor_this_turn = {
         color: color,
         body_modifier: state._pending_body_modifier || null,
         effects: _mergedEffects
       };
+    }
+    // v7.7.25 — also dedup state.active_effects if both somehow coexist
+    if (state.active_effects && state.active_effects.indexOf('bimbo') >= 0 && state.active_effects.indexOf('pinup') >= 0) {
+      state.active_effects = state.active_effects.filter(function(e){ return e !== 'pinup'; });
     }
     delete state._pending_body_modifier;
   }
