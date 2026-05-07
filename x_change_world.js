@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.25",
+  "version": "7.7.26",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6861,6 +6861,35 @@ function detectPillCovertIntake(text, engine) {
   engine.setFlag('pill_intake_covert', { ttl: 1 });
   return true;
 }
+// v7.7.26 — detect overt physical-force phrasing in the same user message that
+// triggered an intake. Distinct from covert (laced/spiked) — this is held-down,
+// pried-open, made-to-swallow. Surfaces as `pill_intake_forced_phrasing` flag,
+// consumed by _firePillConsume to set state._intake_consent='forced'. The model
+// uses this in the TX reaction frame to write the right kind of resistance
+// instead of defaulting to whatever the persona is loudest about.
+const _FORCE_VERBS_RE = new RegExp(
+  '\\b(?:' +
+    'force(?:s|d|ing)?|' +
+    'shove(?:s|d|ing)?|' +
+    'shoving|' +
+    'pry(?:ing|ied)?|' +
+    'pri(?:es|ed)|' +
+    'pin(?:s|ned|ning)?\\s+(?:him|her|them|down)|' +
+    'hold(?:s|ing)?\\s+(?:him|her|them|down)|' +
+    'held\\s+(?:him|her|them|down)|' +
+    'mak(?:e|es|ing)\\s+(?:him|her|them)\\s+swallow|' +
+    'made\\s+(?:him|her|them)\\s+swallow|' +
+    'against\\s+(?:his|her|their)\\s+will|' +
+    'no\\s+choice' +
+  ')\\b',
+  'i'
+);
+function detectPillIntakeForce(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  if (!_FORCE_VERBS_RE.test(text)) return false;
+  engine.setFlag('pill_intake_forced_phrasing', { ttl: 1 });
+  return true;
+}
 function detectPillDescriptor(text, engine) {
   if (!text || typeof text !== 'string') return null;
   let fe = [];
@@ -7016,7 +7045,7 @@ function _getPillTarget(engine, state) {
   }
   return state;
 }
-function _firePillConsume(engine, color) {
+function _firePillConsume(engine, color, state) {
   // v7.7.4 — when consuming, restore descriptor flags from pill_pending if the
   // current turn's detection didn't see them. This handles the cross-turn case
   // where pill was offered turn N (descriptor present) and intake/color is in
@@ -7035,10 +7064,26 @@ function _firePillConsume(engine, color) {
   engine.setFlag('pill_taken_this_turn', { ttl: 1, value: color });
   engine.clearFlag('pill_pending');
   if (engine.isFlagActive('pill_intake_first_person')) engine.setFlag('pill_persona_target_this_turn', { ttl: 1 });
+  // v7.7.26 — three-state intake consent (covert / forced / voluntary).
+  // covert = laced/spiked/drugged (covert path fired)
+  // forced = direct path + overt force verbs in same user message
+  // voluntary = everything else (default — character chose to take it)
+  // Persisted on target so the TX reaction frame and follow-up turns can read it
+  // even after flags expire.
+  var _consent;
+  if (engine.isFlagActive('pill_intake_covert'))            _consent = 'covert';
+  else if (engine.isFlagActive('pill_intake_forced_phrasing')) _consent = 'forced';
+  else                                                       _consent = 'voluntary';
+  engine.setFlag('pill_intake_consent', { ttl: 1, value: _consent });
+  if (state) {
+    var _t = _getPillTarget(engine, state);
+    if (_t) _t._intake_consent = _consent;
+  }
 }
 
 function registerPillIntake(engine) {
   ['pill_color_detected','pill_intake_verb_seen','pill_intake_first_person','pill_intake_covert',
+   'pill_intake_forced_phrasing','pill_intake_consent',
    'pill_descriptor_effects_present','pill_descriptor_body_modifier_present',
    'pill_taken_this_turn','pill_persona_target_this_turn',
    'pill_invalid_for_gender','pill_already_active_same_color','pill_just_transformed']
@@ -7064,7 +7109,7 @@ function registerPillIntake(engine) {
       },
     });
   });
-  engine.registerHandler('consumePillFromColorDetected', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected')));
+  engine.registerHandler('consumePillFromColorDetected', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected'), state));
   engine.registerHandler('consumePillFromPending', state => {
     const p = engine.getFlagValue('pill_pending');
     let color;
@@ -7076,9 +7121,9 @@ function registerPillIntake(engine) {
     } else {
       color = p;  // backward compat: pre-v7.7.1 value was just a color string
     }
-    _firePillConsume(engine, color);
+    _firePillConsume(engine, color, state);
   });
-  engine.registerHandler('consumePillCovert', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected')));
+  engine.registerHandler('consumePillCovert', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected'), state));
   engine.registerHandler('checkPillValidity', state => {
     const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
     const r = PILL_RULES[c]; if (!r) return;
@@ -7771,6 +7816,7 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
   detectPillColor(text, engine);
   detectPillIntakeVerb(text, engine);
   detectPillCovertIntake(text, engine);
+  detectPillIntakeForce(text, engine);
   detectPillDescriptor(text, engine);
   detectAntidote(text, engine);
   detectCreampie(text, engine);
@@ -7818,6 +7864,9 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
       if (has('pill_invalid_for_gender'))      pillLine += ' [INVALID for birthSex — wasted]';
       else if (has('pill_already_active_same_color')) pillLine += ' [SUPPRESSED — same color]';
       else if (has('pill_just_transformed'))   pillLine += ' [TRANSFORMED]';
+      // v7.7.26 — surface consent state for debugging the TX framing
+      const _consentForLog = engine.getFlagValue('pill_intake_consent') || 'voluntary';
+      pillLine += ' [' + _consentForLog.toUpperCase() + ']';
       if (has('pill_persona_target_this_turn')) pillLine += ' (→ persona)';
       lines.push(pillLine);
     } else if (fired.some(function (f) { return f.indexOf('pill_pending') === 0; })) {
@@ -8355,19 +8404,49 @@ function _rollD12Stat(state) {
 
 const MASC_KEYWORDS = {"masculine_physical":{"words":["chiseled","scarred","rugged","muscular","broad-shouldered","hairy","stubble","beard","grizzled","barrel-chested","calloused","thick-necked"],"delta":3,"cap":3},"masculine_identity":{"words":["masculine","manly","alpha male","macho","virile","man's man","red-blooded"],"delta":4,"cap":2},"masculine_role":{"words":["dad","father","husband","patriarch"],"delta":3,"cap":2},"feminine_body_on_male":{"words":["feminine curves","hourglass","wide hips","perky chest","soft features","pretty face","pouty lips","smooth hairless","plush thighs","bubble butt","bouncy chest","feminine figure"],"delta":-4,"cap":3},"feminine_identity":{"words":["femboy","feminine cravings","girl mode","felt female","always been a girl","sissy","crossdress","en femme","bimbo"],"delta":-5,"cap":2},"trans_medical":{"words":["hormones","hrt","estrogen","testosterone","top surgery","bottom surgery","chest binding","hormone-grown","fat redistribution"],"delta":-6,"cap":2},"trans_identity":{"words":["trans woman","trans man","male frame softened","cis woman","cis man"],"delta":-4,"cap":2},"feminine_physical_mild":{"words":["delicate","dainty","soft skin","slender","graceful build","androgynous","petite frame"],"delta":-2,"cap":2}};
 
-function _generateInitialMasculinity(cardText, birthSex, stats) {
+function _generateInitialMasculinity(cardText, birthSex, stats, tags) {
   // male = born male, full masculine baseline
   // female = born female, full feminine baseline
   // trans_female = MTF = already transitioned, start at midpoint
   // trans_male = FTM = already transitioned, start at midpoint
+  // v7.7.26 — tag-aware archetype baselines: a card tagged 'femboy' / 'sissy' /
+  // 'crossdresser' is identifying its archetype directly. The previous
+  // description-only scan missed these because Marco's card (tag 'femboy') had
+  // no literal 'femboy' word in the description text → ended up at 93 instead
+  // of ~63. Tags win over the birthSex default; keyword scan still tunes from
+  // there. For femboy archetypes we additionally tilt by orientation (gay → fem)
+  // and DOM stat (high DOM → masc, low DOM → fem) since those modify
+  // presentation within the archetype.
+  var tagSet = new Set((tags || []).map(function(t){ return String(t).toLowerCase().trim(); }));
+  var archetypeBaseline = null;
+  var archetypeName = null;
+  if (tagSet.has('femboy'))                                       { archetypeBaseline = 65; archetypeName = 'femboy'; }
+  else if (tagSet.has('sissy'))                                   { archetypeBaseline = 45; archetypeName = 'sissy'; }
+  else if (tagSet.has('crossdresser') || tagSet.has('en femme'))  { archetypeBaseline = 55; archetypeName = 'crossdresser'; }
+
   var baseline;
-  if (birthSex === 'male') baseline = 95;
+  if (archetypeBaseline !== null) baseline = archetypeBaseline;
+  else if (birthSex === 'male') baseline = 95;
   else if (birthSex === 'female') baseline = 5;
   else if (birthSex === 'trans_female' || birthSex === 'trans_male') baseline = 50;
   else baseline = 50;
+
+  // v7.7.26 — tag-driven modifiers. Only stack onto archetype baselines so we
+  // don't accidentally pull a regular cis-male card down for being 'gay'.
+  var tagDelta = 0;
+  var tagApplied = [];
+  if (archetypeBaseline !== null) {
+    if (tagSet.has('gay'))      { tagDelta -= 5; tagApplied.push('gay:-5'); }
+    if (tagSet.has('bisexual')) { tagDelta -= 2; tagApplied.push('bi:-2'); }
+    var dom = parseInt((stats || {}).DOM || 10, 10);
+    if (dom >= 14)     { tagDelta += 5; tagApplied.push('high_DOM:+5'); }
+    else if (dom <= 8) { tagDelta -= 3; tagApplied.push('sub_DOM:-3'); }
+  }
+
   const combined = (cardText || '').toLowerCase();
 
-  // Keywords only — personality stats (DOM/SUB) are not gender identity
+  // Keywords still apply on top — personality stats (DOM/SUB) are not gender
+  // identity globally; the DOM tilt above is archetype-scoped only.
   let kwDelta = 0;
   for (const [_cat, cfg] of Object.entries(MASC_KEYWORDS || {})) {
     let hits = 0;
@@ -8380,10 +8459,12 @@ function _generateInitialMasculinity(cardText, birthSex, stats) {
     kwDelta += hits * cfg.delta;
   }
 
-  const result = Math.max(0, Math.min(100, baseline + kwDelta));
+  const result = Math.max(0, Math.min(100, baseline + tagDelta + kwDelta));
 
   console.log('[MASC] Initial masculinity=' + result
     + ' (baseline=' + baseline
+    + (archetypeName ? ' archetype=' + archetypeName : '')
+    + (tagApplied.length ? ' tags=[' + tagApplied.join(',') + ']' : '')
     + ' kw_delta=' + kwDelta
     + ' sex=' + birthSex + ')');
 
@@ -13763,6 +13844,25 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   }
   if (state) state._tx_register = _wiRegister;
 
+  // v7.7.26 — INTAKE CONSENT REGISTER. Distinct from the masculinity register:
+  // _wiRegister covers how the character relates to the body changing;
+  // _intakeRegister covers how they relate to the act of taking the pill.
+  // The two stack — a born-male femboy at masc=63 with VOLUNTARY intake gets
+  // "curious / dazed processing" for the body AND "you chose this, no surprise"
+  // for the act, which is what stops the model from defaulting to victim
+  // framing when the persona is loud about non-con. Persisted on state so
+  // follow-up turns can also reference it.
+  const _intakeConsent = (state && state._intake_consent) || 'voluntary';
+  var _intakeRegister;
+  if (_intakeConsent === 'covert') {
+    _intakeRegister = 'INTAKE: covert (drink/food was dosed without their knowledge). The character did NOT know this was a pill until the body started changing. Render the realization moment when changes start: shock at having been dosed, betrayal, "what did you do to me." This is the framing for the act of intake, separate from how they feel about the body itself.';
+  } else if (_intakeConsent === 'forced') {
+    _intakeRegister = 'INTAKE: forced (held down, pried open, made to swallow). The character physically resisted and was overpowered. Render acknowledgment of the force, defiance or fear from being overridden, body changing despite their will. Restraints / pinning are valid framing if the user message included that.';
+  } else {
+    _intakeRegister = 'INTAKE: voluntary — the character CHOSE to take this pill. They are not surprised it was given, not violated, not restrained. The body changes happen TO someone who agreed to it. The reaction belongs to curiosity, dazed processing, and being-with-the-change — NOT to violation, restraint hallucination, or "change me back" demands. If the masculinity register calls for resistance, locate that resistance in the body sensations themselves, not in the act of intake.';
+  }
+  if (state) state._tx_intake_register = _intakeRegister;
+
   // ── Assemble TX block — engine declares facts, character voice writes the scene ──
   // v7.7.7: surface txPhysical (body-path guide, was computed and dropped) + _tx_register (was XML attr, now first-class element)
   lines.push('<tx type="reference">');
@@ -13814,6 +13914,8 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   }
   // Reaction register — character-disposition framing for HOW they relate to the change emotionally.
   if (_wiRegister) lines.push('  <reaction-register>' + _wiRegister + '</reaction-register>');
+  // v7.7.26 — Intake register — framing for HOW the act of taking the pill is rendered.
+  if (_intakeRegister) lines.push('  <intake-register>' + _intakeRegister + '</intake-register>');
   // Override clause — engine state wins over card-level persistence claims.
   lines.push('  <override>The new body is the only body that exists from this turn forward. Previous anatomy, gear, chastity devices, and any "permanent" body claims from the card no longer apply.</override>');
   lines.push('</tx>');
@@ -16099,7 +16201,7 @@ function buildStorySummary(state) {
 }
 
 
-function processTurn({systemText, messages, state, personaState, config, charNameHint, personaName, personaDescription, cardPersonality, cardDescription, cardScenario, locationOverride, scenarioOverride}) {
+function processTurn({systemText, messages, state, personaState, config, charNameHint, personaName, personaDescription, cardPersonality, cardDescription, cardScenario, cardTags, locationOverride, scenarioOverride}) {
   // THE MAIN FUNCTION — Port of Python lines 15499-15707 exactly
   personaState = personaState || {};  // guard against undefined
   // v7.7.6 — stamp engine version into state so off-device debug pulls can show it
@@ -16318,7 +16420,9 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     if (state.masculinity == null) {
       const cardTextForMasc = _cardSection(systemText);
       const birthSex = _resolveSex(sex);
-      state.masculinity = _generateInitialMasculinity(cardTextForMasc, birthSex, state.stats);
+      // v7.7.26 — pass cardTags through for archetype detection (femboy/sissy/etc).
+      // Falls back to undefined → Set() with no entries if extension is older.
+      state.masculinity = _generateInitialMasculinity(cardTextForMasc, birthSex, state.stats, cardTags);
       state._masculinity_delta_this_session = 0;
       state._sex_origin = birthSex;
     }
