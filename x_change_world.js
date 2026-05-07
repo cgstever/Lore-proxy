@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.26",
+  "version": "7.7.27",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -8417,12 +8417,29 @@ function _generateInitialMasculinity(cardText, birthSex, stats, tags) {
   // there. For femboy archetypes we additionally tilt by orientation (gay → fem)
   // and DOM stat (high DOM → masc, low DOM → fem) since those modify
   // presentation within the archetype.
-  var tagSet = new Set((tags || []).map(function(t){ return String(t).toLowerCase().trim(); }));
+  var tagList = (tags || []).map(function(t){ return String(t).toLowerCase().trim(); });
+  var tagSet = new Set(tagList);
+  // v7.7.27 — substring match on tags so compound archetype tags ("closeted
+  // femboy", "shy sissy", "amateur crossdresser") still trigger the right
+  // archetype baseline. Exact-match was too strict and missed Jean's
+  // 'closeted femboy' tag, leaving her at 93 instead of ~57. Also scan the
+  // card description text as a fallback for cards with sparse tags.
   var archetypeBaseline = null;
   var archetypeName = null;
-  if (tagSet.has('femboy'))                                       { archetypeBaseline = 65; archetypeName = 'femboy'; }
-  else if (tagSet.has('sissy'))                                   { archetypeBaseline = 45; archetypeName = 'sissy'; }
-  else if (tagSet.has('crossdresser') || tagSet.has('en femme'))  { archetypeBaseline = 55; archetypeName = 'crossdresser'; }
+  var _hasArchTag = function(needle) {
+    for (var i = 0; i < tagList.length; i++) {
+      if (tagList[i].indexOf(needle) >= 0) return true;
+    }
+    return false;
+  };
+  var _descLower = (cardText || '').toLowerCase();
+  var _hasArchDesc = function(needle) {
+    return new RegExp('\\b' + needle + '\\b').test(_descLower);
+  };
+  if (_hasArchTag('femboy') || _hasArchDesc('femboy'))            { archetypeBaseline = 65; archetypeName = 'femboy'; }
+  else if (_hasArchTag('sissy') || _hasArchDesc('sissy'))         { archetypeBaseline = 45; archetypeName = 'sissy'; }
+  else if (_hasArchTag('crossdresser') || _hasArchTag('en femme')
+        || _hasArchDesc('crossdresser') || _hasArchDesc('en femme')) { archetypeBaseline = 55; archetypeName = 'crossdresser'; }
 
   var baseline;
   if (archetypeBaseline !== null) baseline = archetypeBaseline;
