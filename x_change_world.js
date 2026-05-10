@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.27",
+  "version": "7.7.28",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6854,12 +6854,30 @@ function detectPillIntakeVerb(text, engine) {
   if (fp.test(text)) engine.setFlag('pill_intake_first_person', { ttl: 1 });
   return true;
 }
+// v7.7.28 — split covert verbs by ambiguity. "slipped/drugged/dosed" almost
+// always mean secretly-administered ("slipped a pill into her drink", "drugged
+// her wine"). "laced/spiked" are commonly used as flavor-descriptive prose ("a
+// drink laced with vanilla", "water spiked with electrolytes") and need an
+// awareness-negation context in the SAME message to actually mean covert.
+const _COVERT_BARE_RE = /\b(?:slipped|drugged|dosed)\b/i;
+const _COVERT_AMBIG_RE = /\b(?:laced|spiked)\b/i;
+const _COVERT_AWARENESS_RE = /\b(?:without\s+(?:her|his|their|them)\s+(?:knowing|noticing|seeing|realizing)|(?:doesn|didn|wasn|isn|won)['’]t\s+(?:notice|see|realize|know|catch)|secretly|covertly|sneakily|on\s+the\s+sly|behind\s+(?:her|his|their)\s+back|while\s+\w+\s+(?:wasn|isn|aren)['’]t\s+looking|unaware|oblivious|none\s+the\s+wiser)\b/i;
 function detectPillCovertIntake(text, engine) {
   if (!text || typeof text !== 'string') return false;
-  const re = new RegExp('\\b(?:'+COVERT_VERBS.join('|')+')\\b','i');
-  if (!re.test(text)) return false;
-  engine.setFlag('pill_intake_covert', { ttl: 1 });
-  return true;
+  // Bare match: slipped/drugged/dosed alone is enough — these are unambiguous.
+  if (_COVERT_BARE_RE.test(text)) {
+    engine.setFlag('pill_intake_covert', { ttl: 1 });
+    return true;
+  }
+  // Ambiguous match: laced/spiked only fires covert if awareness-negation
+  // language is present. Otherwise it's flavor prose (e.g., "water laced with
+  // a pink breeder pill" said while openly handing it to someone) and the
+  // intake should stay voluntary/forced.
+  if (_COVERT_AMBIG_RE.test(text) && _COVERT_AWARENESS_RE.test(text)) {
+    engine.setFlag('pill_intake_covert', { ttl: 1 });
+    return true;
+  }
+  return false;
 }
 // v7.7.26 — detect overt physical-force phrasing in the same user message that
 // triggered an intake. Distinct from covert (laced/spiked) — this is held-down,
@@ -7768,6 +7786,12 @@ const REBUILD_OWNED_FIELDS = [
   '_extra_fertile_active',
   '_excitable_ovaries_active',
   '_confirmed_submissive_active',
+  // v7.7.28 — _intake_consent is stamped on the shadow target by _firePillConsume
+  // but buildTransformationGuidance reads from realState. Without this copy-back
+  // the intake-register defaults to 'voluntary' even when intake was covert/forced.
+  // Jean's chat: shadow had 'covert', realState had None → prompt told the model
+  // "voluntary" → register mismatch.
+  '_intake_consent',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -13881,24 +13905,103 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   if (state) state._tx_intake_register = _intakeRegister;
 
   // ── Assemble TX block — engine declares facts, character voice writes the scene ──
-  // v7.7.7: surface txPhysical (body-path guide, was computed and dropped) + _tx_register (was XML attr, now first-class element)
+  // v7.7.28 — TX block beefed up with per-axis stage guides. Previously only
+  // genitals had a stage-list (rich), while everything else got either a single
+  // paragraph (frame) or just a name in <areas> (chest/face/hair/voice). Result:
+  // models rendered genitals well and skipped face/voice/hair/chest. Now every
+  // axis gets the same stages-with-sensation treatment, and tx-direction
+  // enforces "every stage in EVERY guide MUST be visible."
+  //
+  // Direction is determined by the pill's form_sex target:
+  //   pink/purple → toSex=female → M→F direction guides
+  //   blue        → toSex=male   → F→M direction guides
+  // Purple keeps cock+balls but the body becomes feminine, so it uses the
+  // M→F frame/chest/face/hair/voice guides AND the penis_only_no_vagina
+  // genital guide.
+  var _bustForGuide = _resolvedBust || '';
+  var _frameGuide   = '';
+  var _chestGuide   = '';
+  var _faceGuide    = '';
+  var _hairGuide    = '';
+  var _voiceGuide   = '';
+  var _skinGuide    = '';
+  if (!noChange && toSex === 'female') {
+    _frameGuide = 'Stages (reference only — render in character voice): '
+      + '(1) shoulder mass thins, upper body narrows, '
+      + '(2) hip / butt / thigh mass thickens, fat redistributing downward, '
+      + '(3) waist taper deepens, '
+      + '(4) final: ' + (sampledBuild || 'feminine') + ' frame, mass redistributed feminine. '
+      + 'Sensation: weight shifting in the body, balance recalibrating, stance widening at the hips, center of gravity dropping.';
+    _chestGuide = 'Stages (reference only — render in character voice): '
+      + '(1) nipples flush sensitive and darken, '
+      + '(2) tissue swells underneath in tight aching mounds, '
+      + '(3) fat layers round out the form, '
+      + '(4) final: ' + (_bustForGuide || 'feminine bust') + ' settling full and warm, areolas wider, weight pulling forward when leaning. '
+      + 'Sensation: tight stretch, internal heat, sudden awareness of fabric pressure on newly-sensitive skin.';
+    _faceGuide = 'Stages (reference only — render in character voice): '
+      + '(1) jawline softens — mandible angle reshapes inward, '
+      + '(2) cheekbones round and lift as fat redistributes upward, '
+      + '(3) brow ridge softens, lips plump slightly, eye shape opens, '
+      + '(4) final: same recognizable features in feminized proportions. '
+      + 'Sensation: heat under the skin, pulling along the jawline, structure shifting beneath unchanged surface.';
+    _hairGuide = 'Stages (reference only — render in character voice): '
+      + '(1) body hair fades along chest / arms / legs / face, '
+      + '(2) scalp hair adjusts toward the target hair shown in the character description above (length / texture / line), '
+      + '(3) final: feminized scalp hair, body hair receded. '
+      + 'Sensation: tingling along scalp, prickle along arms as body hair recedes, hair settling differently against neck and shoulders.';
+    _voiceGuide = 'Stages (reference only — render in character voice): '
+      + '(1) larynx position lifts subtly, '
+      + '(2) pitch rises, resonance softens, '
+      + '(3) final: lighter register cracking once mid-sentence and resettling. '
+      + 'Sensation: throat tightening then loosening, voice catching unfamiliarly.';
+    _skinGuide = 'Skin softens, smooths, fine pores tighten. Pre-existing tan lines remain. Sensation: warm flush, surface texture going silkier under touch.';
+  } else if (!noChange && toSex === 'male') {
+    _frameGuide = 'Stages (reference only — render in character voice): '
+      + '(1) hip / butt / thigh mass thins, lower body narrows, '
+      + '(2) shoulder / chest / arm mass thickens, fat redistributing upward, '
+      + '(3) waist squares, ribcage broadens, '
+      + '(4) final: ' + (sampledBuild || 'masculine') + ' frame, mass redistributed masculine. '
+      + 'Sensation: weight shifting in the body, balance recalibrating, stance squaring at the shoulders, center of gravity rising.';
+    _chestGuide = 'Stages (reference only — render in character voice): '
+      + '(1) breast tissue deflates inward, fat receding, '
+      + '(2) chest plate flattens and gains pectoral definition, '
+      + '(3) nipples darken and harden, areolas tighten smaller, '
+      + '(4) final: flat masculine chest with muscle definition. '
+      + 'Sensation: tightening, pressure as soft tissue resorbs, sudden lightness on the chest.';
+    _faceGuide = 'Stages (reference only — render in character voice): '
+      + '(1) jawline squares and broadens, '
+      + '(2) brow ridge thickens, cheekbones flatten, '
+      + '(3) lips thin slightly, neck thickens, '
+      + '(4) final: same recognizable features in masculinized proportions. '
+      + 'Sensation: pressure pushing bone outward along the jaw and brow.';
+    _hairGuide = 'Stages (reference only — render in character voice): '
+      + '(1) body hair grows in along chest / arms / legs / face, '
+      + '(2) scalp hair adjusts toward the target hair shown in the character description above (length / texture / line), '
+      + '(3) final: masculinized scalp hair, body hair grown in. '
+      + 'Sensation: prickling along skin as new hair pushes through, scalp adjusting.';
+    _voiceGuide = 'Stages (reference only — render in character voice): '
+      + '(1) larynx position drops, '
+      + '(2) pitch lowers, resonance deepens, '
+      + '(3) final: heavier register cracking once mid-sentence and resettling. '
+      + 'Sensation: throat thickening, voice rumbling unfamiliarly.';
+    _skinGuide = 'Skin coarsens slightly, pores open, oil increases. Sensation: warm flush, surface texture going rougher under touch.';
+  }
+
   lines.push('<tx type="reference">');
   lines.push('  <origin>' + _originParts.join(', ') + '</origin>');
   lines.push('  <target>' + _targetParts.join(', ') + '</target>');
-  if (color === 'blue') {
-    lines.push('  <areas>height, frame, body shape, chest, body hair, face, voice, genitals</areas>');
-  } else {
-    lines.push('  <areas>height, frame, body shape, chest, hair, face, voice, genitals</areas>');
-  }
   if (_clothingStr) lines.push('  <clothing>' + _clothingStr + '</clothing>');
   if (banner) lines.push('  <direction>' + banner + '</direction>');
-  // Body-path guide — specific narrative for this exact origin→target body transition.
-  // Lifted from rs.transformation_physical[color][txBodyPath]; was previously computed and dropped.
+  // Color-narrative paragraph (background context — kept from txPhysical table)
   if (txPhysical) lines.push('  <body-path-guide>' + txPhysical + '</body-path-guide>');
-  // v7.7.12 — Genital-tx guide. Stage-list reference (not narrative prose). Tells the
-  // model WHAT happens anatomically; character voice translates it. v7.7.11's prose
-  // version caused echo (model lifted "shaft inverting" almost verbatim). Stages force
-  // the model to render in its own words.
+  // Per-axis stage guides — model must render every stage in every applicable guide.
+  if (_frameGuide) lines.push('  <frame-tx-guide>' + _frameGuide + '</frame-tx-guide>');
+  if (_chestGuide) lines.push('  <chest-tx-guide>' + _chestGuide + '</chest-tx-guide>');
+  if (_faceGuide)  lines.push('  <face-tx-guide>'  + _faceGuide  + '</face-tx-guide>');
+  if (_hairGuide)  lines.push('  <hair-tx-guide>'  + _hairGuide  + '</hair-tx-guide>');
+  if (_voiceGuide) lines.push('  <voice-tx-guide>' + _voiceGuide + '</voice-tx-guide>');
+  if (_skinGuide)  lines.push('  <skin-tx-guide>'  + _skinGuide  + '</skin-tx-guide>');
+  // Genital-tx guide — preserved unchanged (already rich)
   if (!noChange) {
     var _genitalKey = pRule.genitals || '';
     var _genitalGuide = '';
@@ -13937,8 +14040,11 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   lines.push('  <override>The new body is the only body that exists from this turn forward. Previous anatomy, gear, chastity devices, and any "permanent" body claims from the card no longer apply.</override>');
   lines.push('</tx>');
   lines.push('');
-  // Voice-led tx-direction — engine sets WHAT must end up true; character voice owns HOW it\'s narrated.
-  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The body-path-guide describes the overall body-shape transition; the genital-tx-guide lists the specific anatomy reshape stages between the legs (when present — render EVERY stage explicitly in the character\'s voice; do not compress multiple stages into a single phrase or skip stages); the reaction-register describes how the character should relate to the change emotionally. Use all three as reference, then narrate the experience the way THIS character would experience and express it — through their mannerisms, dialect, and natural turn-length. Don\'t list body parts. Don\'t produce a paragraph per area. The body MUST end as the target listed above, and every stage in the genital-tx-guide MUST be visible in the prose. HOW you narrate it is yours.</tx-direction>');
+  // v7.7.28 — voice-led tx-direction with per-axis enforcement. The previous
+  // version only required "every stage in the genital-tx-guide" — models took
+  // that literally and skipped chest/face/hair/voice. Now each present guide
+  // must show all its stages, and a length floor blocks compression.
+  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. There are multiple stage-list guides above (frame, chest, face, hair, voice, skin, genitals — only the ones present this turn apply). The reaction-register and intake-register tell you HOW the character relates to the change emotionally and to the act of intake. RENDER EVERY STAGE OF EVERY PRESENT GUIDE in the character\'s voice — do not compress multiple stages into a single phrase, do not skip stages, do not let one axis (especially genitals) crowd out the others. Minimum one distinct beat for each guide present plus one for the reaction. Narrate it the way THIS character would experience it — through their mannerisms, dialect, kinks, and natural turn-length. Don\'t list body parts; don\'t produce a paragraph per area; weave the axes through the character\'s reaction. The body MUST end as the target listed above, and every stage in every guide MUST be visible in the prose. HOW you narrate it is yours.</tx-direction>');
 
   return _stripEffectNames(lines.join('\n'));
 }
