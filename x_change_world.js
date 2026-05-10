@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.28",
+  "version": "7.7.29",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6854,30 +6854,15 @@ function detectPillIntakeVerb(text, engine) {
   if (fp.test(text)) engine.setFlag('pill_intake_first_person', { ttl: 1 });
   return true;
 }
-// v7.7.28 — split covert verbs by ambiguity. "slipped/drugged/dosed" almost
-// always mean secretly-administered ("slipped a pill into her drink", "drugged
-// her wine"). "laced/spiked" are commonly used as flavor-descriptive prose ("a
-// drink laced with vanilla", "water spiked with electrolytes") and need an
-// awareness-negation context in the SAME message to actually mean covert.
-const _COVERT_BARE_RE = /\b(?:slipped|drugged|dosed)\b/i;
-const _COVERT_AMBIG_RE = /\b(?:laced|spiked)\b/i;
-const _COVERT_AWARENESS_RE = /\b(?:without\s+(?:her|his|their|them)\s+(?:knowing|noticing|seeing|realizing)|(?:doesn|didn|wasn|isn|won)['’]t\s+(?:notice|see|realize|know|catch)|secretly|covertly|sneakily|on\s+the\s+sly|behind\s+(?:her|his|their)\s+back|while\s+\w+\s+(?:wasn|isn|aren)['’]t\s+looking|unaware|oblivious|none\s+the\s+wiser)\b/i;
+// v7.7.29 — reverted v7.7.28's split: laced/spiked are bare-match covert again,
+// matching the original behavior. Per user direction: when they write "laced"
+// they mean covert, period — flavor-prose ambiguity isn't worth catching.
 function detectPillCovertIntake(text, engine) {
   if (!text || typeof text !== 'string') return false;
-  // Bare match: slipped/drugged/dosed alone is enough — these are unambiguous.
-  if (_COVERT_BARE_RE.test(text)) {
-    engine.setFlag('pill_intake_covert', { ttl: 1 });
-    return true;
-  }
-  // Ambiguous match: laced/spiked only fires covert if awareness-negation
-  // language is present. Otherwise it's flavor prose (e.g., "water laced with
-  // a pink breeder pill" said while openly handing it to someone) and the
-  // intake should stay voluntary/forced.
-  if (_COVERT_AMBIG_RE.test(text) && _COVERT_AWARENESS_RE.test(text)) {
-    engine.setFlag('pill_intake_covert', { ttl: 1 });
-    return true;
-  }
-  return false;
+  const re = new RegExp('\\b(?:'+COVERT_VERBS.join('|')+')\\b','i');
+  if (!re.test(text)) return false;
+  engine.setFlag('pill_intake_covert', { ttl: 1 });
+  return true;
 }
 // v7.7.26 — detect overt physical-force phrasing in the same user message that
 // triggered an intake. Distinct from covert (laced/spiked) — this is held-down,
