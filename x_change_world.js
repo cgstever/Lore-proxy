@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.29",
+  "version": "7.7.30",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7406,6 +7406,94 @@ function _isMotherhoodMode(state, engine) {
   return true;
 }
 function _hasBreederOrSurrogate(state) { const fx = state.active_effects || []; return fx.includes('breeder') || fx.includes('surrogate'); }
+
+// ── v7.7.30 — BREEDER BODY-PULL FRAGMENTS ─────────────────────────────────
+// Surfaces the body's "empty ache / clenching around nothing" signal during
+// the arousal climb — drawn from the phrase DB at
+// engine_work/_phrase_db_breeder_bimbo.md (sections A1-A13).
+//
+// Two arcs:
+//   discovery  — first climb up the arousal ladder after breeder activates.
+//                Character is still naming the sensation, rationalizing it.
+//   familiar   — every climb after the first creampie-orgasm (the loop closes
+//                once). The pull becomes known gravity, not a discovery.
+//
+// Three arousal tiers (mapped onto the engine's 7-band arousal scale):
+//   onset      — arousal 1-39   (cold + warm)        — faint clenching, easy to dismiss
+//   building   — arousal 40-74  (build + heat)       — explicit empty pull, "this is the pill"
+//   peak       — arousal 75-100 (intense/over/edge)  — "I'm dying, I'm so empty" register
+//
+// Sampling: one fragment per applicable turn, rotation guard via
+// state._breeder_pull_seen (last 3 picks excluded from next sample).
+const _BREEDER_BODY_PULL = {
+  discovery: {
+    onset: [
+      "an internal clenching the new body wasn't doing before — easy to dismiss the first time, harder the second",
+      "a small empty pull deep behind the navel — registers as 'huh' before it registers as anything else",
+      "running a degree or two warmer than the scene calls for, no obvious reason — the body has decided something quietly",
+      "the body wanting to open in ways the character keeps overriding without quite knowing why",
+      "an itch that isn't actually an itch — more like a muscle wanting to grip something that isn't there"
+    ],
+    building: [
+      "the empty pull has rhythm now — clenching around nothing in a way the character is starting to recognize as the pill working",
+      "thighs not staying together the way they used to — a presentation reflex appearing without permission",
+      "body temperature elevated past what arousal alone would explain — running hot, lubricating, the inside aching to be filled",
+      "the hollow inside has become the loudest signal — louder than the scene, louder than thought",
+      "realization landing in real time: this is what the pill does, it's making the body want to be filled"
+    ],
+    peak: [
+      "the pull has stopped being discoverable and started being everything — the body is demanding insemination and the demand is no longer something the mind can step around",
+      "an emptiness the character would have called pain if the pull weren't also pleasure — the new body's primary signal at full volume",
+      "thoughts narrowing to a single channel — be filled, be filled, be filled — and the character is realizing they're going to say it out loud"
+    ]
+  },
+  familiar: {
+    onset: [
+      "the early clenching, familiar by now — the body announcing the program before the mind catches up",
+      "pelvic restlessness running its standard pattern, known and expected",
+      "running warm and starting to want, on schedule"
+    ],
+    building: [
+      "the empty pull at full operational volume — clenching around nothing, thighs apart, body open, the pill doing what the pill does",
+      "presenting without thinking, signaling availability with practiced ease",
+      "the inside aching the way it always aches before being filled — familiar territory"
+    ],
+    peak: [
+      "demand at full volume, body in the position it always ends up in, the words a beat away from coming out",
+      "edge-state pull — empty, hungry, and nothing else is going to register until that gets fixed"
+    ]
+  }
+};
+
+function _pickBreederBodyPull(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0) return null;
+  // Post-conception: motherhood mode owns the body signal; pull narration ends.
+  if (state.pregnancy && state.pregnancy.confirmed) {
+    var curTurn = state.current_turn != null ? state.current_turn : 0;
+    if (state._conception_turn !== curTurn) return null;
+  }
+  var arousal = parseInt(state.arousal || 0, 10);
+  if (arousal <= 0) return null;
+
+  var tier = (arousal < 40) ? 'onset' : (arousal < 75) ? 'building' : 'peak';
+  var arc  = state._breeder_first_climb_done ? 'familiar' : 'discovery';
+  var pool = ((_BREEDER_BODY_PULL[arc] || {})[tier]) || [];
+  if (!pool.length) return null;
+
+  // Rotation guard: exclude the last 3 picks from the next sample
+  var seen = Array.isArray(state._breeder_pull_seen) ? state._breeder_pull_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_pull_seen = seen;
+
+  return { arc: arc, tier: tier, text: pick };
+}
 function _hasPregnancyEligiblePill(state) { const r = PILL_RULES[state.active_pill]; return !!(r && r.preg_eligible); }
 function registerBreederLoop(engine, opts) {
   opts = opts || {};
@@ -7423,6 +7511,9 @@ function registerBreederLoop(engine, opts) {
     if (!_hasPregnancyEligiblePill(state)) return;
     if (_isMotherhoodMode(state, engine)) return;
     state._breeder_orgasm_count = (state._breeder_orgasm_count || 0) + 1;
+    // v7.7.30 — first arousal-climb closure marks the discovery arc as complete.
+    // Subsequent climbs use 'familiar' framing in the body-pull narration.
+    state._breeder_first_climb_done = true;
     engine.setFlag('breeder_orgasm_forced_this_turn', { ttl:1 });
     engine.setFlag('character_orgasm_this_turn', { ttl:1 });
   });
@@ -7777,6 +7868,12 @@ const REBUILD_OWNED_FIELDS = [
   // Jean's chat: shadow had 'covert', realState had None → prompt told the model
   // "voluntary" → register mismatch.
   '_intake_consent',
+  // v7.7.30 — breeder body-pull discovery → familiar arc tracking.
+  // _breeder_first_climb_done flips true after the first creampie-orgasm closes
+  // the loop; switches the body-pull narration from discovery to familiar.
+  // _breeder_pull_seen is the rotation guard (last 3 fragments picked, to keep
+  // narration from repeating itself turn over turn).
+  '_breeder_first_climb_done', '_breeder_pull_seen',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -12034,6 +12131,9 @@ function _checkOrgasmTrigger(state, ctx, events, rs) {
     if (pr.pregnancy_eligible) {
       const count = parseInt(state._breeder_orgasm_count || state.breeder_orgasm_count || 0, 10) + 1;
       state._breeder_orgasm_count = count;
+      // v7.7.30 — also stamp on the legacy path so familiar-arc framing kicks in
+      // even when the rebuild bundle's handler didn't fire this turn.
+      state._breeder_first_climb_done = true;
       events.breeder_orgasm = true;
       console.log('[BREEDER] insemination → forced orgasm (arousal=' + arousal + ')');
       return { orgasm: true, roll: { forced: 'breeder_creampie', arousal: arousal } };
@@ -14808,6 +14908,16 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     if (_sbo.bust) _sboParts.push('bust: ' + _sbo.bust);
     if (_sbo.hips) _sboParts.push('hips: ' + _sbo.hips);
     if (_sboParts.length) stateContent.push(_stripEffectNames('surrogate-body: ' + _sboParts.join(' | ')));
+  }
+  // v7.7.30 — breeder body-pull (first-climb discovery → familiar arc).
+  // Surfaces the empty-pull body signal during arousal climb so the model
+  // doesn't have to invent it from scratch. Per-turn, arousal-tier-gated.
+  // Skipped on TX turn (TX block owns the body narrative that turn).
+  if (!_isTxTurn) {
+    var _breederPull = _pickBreederBodyPull(state);
+    if (_breederPull) {
+      stateContent.push('<breeder-pull arc="' + _breederPull.arc + '" tier="' + _breederPull.tier + '">' + _breederPull.text + '</breeder-pull>');
+    }
   }
   if (stateContent.length || _resistBeats.length) {
     stateLines.push('<state ' + _stateAttrs.join(' ') + '>');
