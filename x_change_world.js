@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.32",
+  "version": "7.7.33",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17180,6 +17180,31 @@ function _buildInjectArray(header, state, rs) {
 
 var _xcwHudState = null;
 var _xcwHudConfig = null;
+var _xcwHudPollTimer = null;
+
+// v7.7.33 — pull the freshest state straight from ST's chat variables. The
+// HUD used to rely on `_xcwHudState` being kept current via updateHud() pings
+// from the extension. After the v2.0.10 clone-on-read change, _xcwHudState
+// holds a snapshot — any turn where the extension's updateHud call gets
+// skipped leaves the HUD frozen. Pulling live from chat variables makes the
+// HUD self-healing: even if no one pings it, every render walks back to find
+// the latest AI message's state slot and shows that.
+function _xcwReadLiveState() {
+  try {
+    if (typeof SillyTavern === 'undefined' || !SillyTavern.getContext) return null;
+    var ctx = SillyTavern.getContext();
+    var chat = (ctx && ctx.chat) || [];
+    for (var i = chat.length - 1; i >= 0; i--) {
+      var msg = chat[i];
+      if (msg && !msg.is_user && !msg.is_system) {
+        var sid = msg.swipe_id || 0;
+        var s = msg.variables && msg.variables[sid] && msg.variables[sid].state;
+        if (s) return s;
+      }
+    }
+  } catch (_) { /* fall through */ }
+  return null;
+}
 
 function _xcwStatMod(val) {
   var v = parseInt(val || 10, 10);
@@ -17251,6 +17276,11 @@ function _xcwFormatRoll(entry) {
 }
 
 function buildXcwHudHtml(state, rs) {
+  // v7.7.33 — always prefer the live state from chat variables. The passed
+  // `state` argument was historically the only source, but it's a snapshot
+  // since v2.0.10 cloning and can go stale. Live read is the source of truth.
+  var live = _xcwReadLiveState();
+  if (live) state = live;
   if (!state) {
     return '<div style="color:#888;font-style:italic;padding:8px;">Waiting for first turn...</div>';
   }
@@ -17673,11 +17703,34 @@ function initXcwFloatingHud() {
     var liveWin = document.getElementById('xcw-float');
     if (!liveWin || liveWin.style.display === 'none') return;
     var el = document.getElementById('xcw-float-body');
-    if (el && _xcwHudState) {
+    if (el) {
+      // v7.7.33 — buildXcwHudHtml now pulls live state from chat variables itself
       el.innerHTML = buildXcwHudHtml(_xcwHudState, _xcwHudConfig);
       _xcwHudApplyState(el);
     }
   };
+
+  // v7.7.33 — periodic auto-refresh. Safety net for the snapshot-staleness
+  // class of bugs: even if no one calls updateHud(), the HUD re-pulls live
+  // state from chat variables every 2 seconds and rebuilds. Tab visibility
+  // pauses the poll so it doesn't waste cycles in the background.
+  if (_xcwHudPollTimer) { try { clearInterval(_xcwHudPollTimer); } catch (_) {} }
+  _xcwHudPollTimer = setInterval(function() {
+    if (typeof document === 'undefined' || document.hidden) return;
+    var floatVisible = false;
+    var fw = document.getElementById('xcw-float');
+    if (fw && fw.style.display !== 'none') floatVisible = true;
+    var inlineVisible = !!document.getElementById('xcw-hud');
+    if (!floatVisible && !inlineVisible) return;
+    if (floatVisible && typeof window._xcwFloatRefresh === 'function') window._xcwFloatRefresh();
+    if (inlineVisible) {
+      var inEl = document.getElementById('xcw-hud');
+      if (inEl) {
+        inEl.innerHTML = buildXcwHudHtml(_xcwHudState, _xcwHudConfig);
+        _xcwHudApplyState(inEl);
+      }
+    }
+  }, 2000);
 }
 
 function getSettingsHtml(config) {
