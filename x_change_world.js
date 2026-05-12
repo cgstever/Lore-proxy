@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.30",
+  "version": "7.7.31",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7407,25 +7407,51 @@ function _isMotherhoodMode(state, engine) {
 }
 function _hasBreederOrSurrogate(state) { const fx = state.active_effects || []; return fx.includes('breeder') || fx.includes('surrogate'); }
 
-// ── v7.7.30 — BREEDER BODY-PULL FRAGMENTS ─────────────────────────────────
+// ── v7.7.31 — BREEDER BODY-PULL FRAGMENTS ─────────────────────────────────
 // Surfaces the body's "empty ache / clenching around nothing" signal during
 // the arousal climb — drawn from the phrase DB at
 // engine_work/_phrase_db_breeder_bimbo.md (sections A1-A13).
 //
-// Two arcs:
-//   discovery  — first climb up the arousal ladder after breeder activates.
-//                Character is still naming the sensation, rationalizing it.
-//   familiar   — every climb after the first creampie-orgasm (the loop closes
-//                once). The pull becomes known gravity, not a discovery.
+// THREE arcs (intake consent × first-climb status):
+//   covert_discovery — covert intake + first climb not yet closed.
+//                      Most alien framing — character has no "I took a pill"
+//                      frame to attach the body signals to. Realization is
+//                      doubled: first the body, then "someone did this".
+//   discovery        — voluntary or forced intake + first climb not yet closed.
+//                      Character knows they took the pill (or was force-fed
+//                      one). Naming the sensation in real time. Curiosity or
+//                      defiance depending on intake, but the FRAME is intact.
+//   familiar         — any intake + first creampie-orgasm has fired.
+//                      Body-pull is known gravity. No discovery beats.
 //
-// Three arousal tiers (mapped onto the engine's 7-band arousal scale):
-//   onset      — arousal 1-39   (cold + warm)        — faint clenching, easy to dismiss
-//   building   — arousal 40-74  (build + heat)       — explicit empty pull, "this is the pill"
-//   peak       — arousal 75-100 (intense/over/edge)  — "I'm dying, I'm so empty" register
+// THREE arousal tiers (re-tiered in v7.7.31 — peak now anchors at 50, not 75,
+// so the "I'm so empty" register fires well before climax-territory arousal):
+//   onset      — arousal 1-29   (cold)              — faint clenching, easy to dismiss
+//   building   — arousal 30-49  (warm)              — explicit empty pull, "this is the pill"
+//   peak       — arousal 50-100 (build → edge)      — "I'm dying, I'm so empty" register
 //
 // Sampling: one fragment per applicable turn, rotation guard via
 // state._breeder_pull_seen (last 3 picks excluded from next sample).
 const _BREEDER_BODY_PULL = {
+  covert_discovery: {
+    onset: [
+      "a small wrongness inside the body that doesn't have an obvious cause — the character is going to be looking for explanations in the wrong places for a while",
+      "internal clenching that didn't exist a few minutes ago — alarming in a way the character is filing as 'something I ate' or 'maybe I'm getting sick'",
+      "a faint empty pull deep inside that reads as foreign, not arousal — the character has no frame for what this is",
+      "running warmer than normal with no obvious trigger — body temperature off, breath catching at nothing, the character glancing around for what's wrong"
+    ],
+    building: [
+      "the clenching has rhythm now and the character is starting to realize this isn't 'something they ate' — the timing tracks with arousal and that itself is alarming",
+      "an empty pull the character is trying to name and failing — too specific to be illness, too anatomical to be mood, the explanation list shrinking",
+      "thighs not staying together the way they should — the body is doing things on its own and the character has just noticed they don't have full control",
+      "the realization arriving in stages: this is wrong, this isn't me, something was done to me — the body is asking for something the character did not agree to want"
+    ],
+    peak: [
+      "the pull has overtaken everything and the character has just put it together — someone did this, this is a pill, the body is demanding insemination and the demand isn't theirs",
+      "an emptiness loud enough to drown out the betrayal — knowing what was done doesn't make the body stop asking",
+      "the character is screaming internally about violation while the body is signaling availability with every breath — two completely separate selves operating in parallel"
+    ]
+  },
   discovery: {
     onset: [
       "an internal clenching the new body wasn't doing before — easy to dismiss the first time, harder the second",
@@ -7477,8 +7503,21 @@ function _pickBreederBodyPull(state) {
   var arousal = parseInt(state.arousal || 0, 10);
   if (arousal <= 0) return null;
 
-  var tier = (arousal < 40) ? 'onset' : (arousal < 75) ? 'building' : 'peak';
-  var arc  = state._breeder_first_climb_done ? 'familiar' : 'discovery';
+  // v7.7.31 — peak anchors at 50 (was 75). The "empty / I'm dying" register
+  // now lands before climax-territory arousal, matching the source phrasing
+  // arc (the books peak this register well before orgasm).
+  var tier = (arousal < 30) ? 'onset' : (arousal < 50) ? 'building' : 'peak';
+
+  // v7.7.31 — arc selection. Covert intake gets its own discovery flavor
+  // (alien / "what was done to me" framing) until first climb closes.
+  var arc;
+  if (state._breeder_first_climb_done) {
+    arc = 'familiar';
+  } else if (state._intake_consent === 'covert') {
+    arc = 'covert_discovery';
+  } else {
+    arc = 'discovery';
+  }
   var pool = ((_BREEDER_BODY_PULL[arc] || {})[tier]) || [];
   if (!pool.length) return null;
 
