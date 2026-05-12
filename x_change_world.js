@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.31",
+  "version": "7.7.32",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -14921,7 +14921,16 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   if (state.masculinity != null) {
     _stateAttrs.push('masculinity="' + _masculinityBandName(parseInt(state.masculinity, 10)) + '"');
   }
-  if (state.active_pill) _stateAttrs.push('pill="' + _xmlAttr(state.active_pill) + '"');
+  // v7.7.32 — hide pill="<color>" from the model when intake was covert and the
+  // character hasn't lived through the first climb yet. The engine still knows
+  // the pill is active and runs all mechanics; the model just sees a body
+  // changing for unknown reasons, matching the character's POV. Once the first
+  // creampie-orgasm closes the loop (_breeder_first_climb_done flips), the
+  // character has put the pieces together and the pill attribute reappears.
+  var _hidePillForCovert = (state._intake_consent === 'covert' && !state._breeder_first_climb_done);
+  if (state.active_pill && !_hidePillForCovert) {
+    _stateAttrs.push('pill="' + _xmlAttr(state.active_pill) + '"');
+  }
 
   var stateLines = [];
   var stateContent = [];
@@ -14948,14 +14957,17 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     if (_sbo.hips) _sboParts.push('hips: ' + _sbo.hips);
     if (_sboParts.length) stateContent.push(_stripEffectNames('surrogate-body: ' + _sboParts.join(' | ')));
   }
-  // v7.7.30 — breeder body-pull (first-climb discovery → familiar arc).
+  // v7.7.30 — body-pull narration (first-climb discovery → familiar arc).
   // Surfaces the empty-pull body signal during arousal climb so the model
   // doesn't have to invent it from scratch. Per-turn, arousal-tier-gated.
   // Skipped on TX turn (TX block owns the body narrative that turn).
+  // v7.7.32 — element renamed from <breeder-pull> to neutral <body-pull> so
+  // the effect mechanic name doesn't leak via the XML tag itself. Especially
+  // matters for covert intake where the model should be ignorant of cause.
   if (!_isTxTurn) {
     var _breederPull = _pickBreederBodyPull(state);
     if (_breederPull) {
-      stateContent.push('<breeder-pull arc="' + _breederPull.arc + '" tier="' + _breederPull.tier + '">' + _breederPull.text + '</breeder-pull>');
+      stateContent.push('<body-pull arc="' + _breederPull.arc + '" tier="' + _breederPull.tier + '">' + _breederPull.text + '</body-pull>');
     }
   }
   if (stateContent.length || _resistBeats.length) {
