@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.35",
+  "version": "7.7.36",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7291,7 +7291,7 @@ function registerClimaxSession(engine, opts) {
     const breederSuppress = (fx.includes('breeder') || fx.includes('surrogate'))
                           && !(state.pregnancy && state.pregnancy.confirmed);
     if (breederSuppress) {
-      const dc = parseInt(state._breeder_dc_current || 30, 10);
+      const dc = parseInt(state._breeder_dc_current || 20, 10);
       const intMod = (typeof getStatMod === 'function') ? getStatMod(state, 'INT') : 0;
       const d20 = Math.floor(rng() * 20) + 1;
       const total = d20 + intMod;
@@ -7631,7 +7631,18 @@ function registerBreederLoop(engine, opts) {
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
   engine.registerHandler('resetBreederDC', state => {
     if (!_hasBreederOrSurrogate(state)) return;
-    state._breeder_dc_current = 30; delete state._breeder_compulsion;
+    // v7.7.36 — starting DC dropped from 30 → 20. At 30, d20 (max 20) + INT mod
+    // (max +5) couldn't break 30 — every character begged on every denial, the
+    // +5/pass ramp never engaged, and INT contributed only roll-log flavor.
+    // At DC 20 the math is "high but passable hard roll":
+    //   INT +5 → need d20 ≥ 15 (30%)
+    //   INT +2 → need d20 ≥ 18 (15%)
+    //   INT  0 → need d20 = 20 (5%, nat 20 only)
+    //   INT −2 → impossible (matches "low intel no choice but to beg")
+    // Spec's +5/pass ramp now means a successful hold raises DC to 25 (only
+    // 5% next time even for max-INT), and a second pass locks at DC 30. So
+    // you can hold once, maybe twice if very smart and lucky, then you break.
+    state._breeder_dc_current = 20; delete state._breeder_compulsion;
     engine.setFlag('breeder_dc_reset_this_turn', { ttl:1 });
   });
   engine.registerHandler('forceBreederOrgasm', state => {
@@ -8142,7 +8153,7 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
     // BREEDER
     if (has('breeder_dc_reset_this_turn') || has('breeder_orgasm_forced_this_turn') || has('breeder_beg_check_this_turn') || has('breeder_beg_passed_this_turn')) {
       let parts = [];
-      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→30 (reset on creampie)');
+      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→20 (reset on creampie)');
       if (has('breeder_orgasm_forced_this_turn')) parts.push('force_orgasm (count=' + (shadow._breeder_orgasm_count || 0) + ')');
       if (has('breeder_beg_check_this_turn')) {
         if (has('breeder_beg_denied_this_turn')) {
