@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.34",
+  "version": "7.7.35",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7279,19 +7279,22 @@ function registerClimaxSession(engine, opts) {
     if (!percentile_passed) return;
     // v7.7.34 — percentile said "body would orgasm now". If breeder/surrogate is
     // suppressing pre-pregnancy, this is the trigger for the compulsion loop:
-    // d20 + breeder_resist_mod vs _breeder_dc_current (starts 30, +5 per pass).
+    // d20 + INT mod vs _breeder_dc_current (starts 30, +5 per pass).
     // PASS → composure holds, DC ramps. FAIL → set compulsion=creampie_required,
     // character begs body-and-voice until creampie resets the cycle. This is the
     // spec's per-denied-orgasm check; previously the compulsion roll happened
     // only on male external climax with a hardcoded DC=15, which is wrong.
+    // v7.7.35 — corrected the modifier from breeder_resist_mod to INT mod. INT
+    // represents the cognitive/composure work of holding back a denied climax;
+    // resistance mod was a leftover from when I was reading the lore-data entry
+    // ("resist.effective_mod") instead of the standalone-module spec.
     const breederSuppress = (fx.includes('breeder') || fx.includes('surrogate'))
                           && !(state.pregnancy && state.pregnancy.confirmed);
     if (breederSuppress) {
       const dc = parseInt(state._breeder_dc_current || 30, 10);
-      const resistMod = (typeof _snapshotEffectResistMod === 'function')
-        ? _snapshotEffectResistMod(state, 'breeder') : 0;
+      const intMod = (typeof getStatMod === 'function') ? getStatMod(state, 'INT') : 0;
       const d20 = Math.floor(rng() * 20) + 1;
-      const total = d20 + resistMod;
+      const total = d20 + intMod;
       engine.setFlag('breeder_beg_check_this_turn', { ttl: 1 });
       if (total >= dc) {
         // Composure holds — DC ramps for next denied orgasm
@@ -7299,7 +7302,7 @@ function registerClimaxSession(engine, opts) {
         delete state._breeder_compulsion;
         engine.setFlag('breeder_beg_passed_this_turn', { ttl: 1 });
         var passEntry = 'breeder_compulsion:HOLD(d20=' + d20
-          + (resistMod >= 0 ? '+' : '') + resistMod + '=' + total
+          + '+INT' + (intMod >= 0 ? '+' : '') + intMod + '=' + total
           + ' vs DC=' + dc + ') DC→' + (dc + 5);
         (state.roll_log = state.roll_log || []).push(passEntry);
       } else {
@@ -7308,7 +7311,7 @@ function registerClimaxSession(engine, opts) {
         state._denial_frustration = (state._denial_frustration || 0) + 1;
         engine.setFlag('breeder_beg_denied_this_turn', { ttl: 1 });
         var failEntry = 'breeder_compulsion:BEG(d20=' + d20
-          + (resistMod >= 0 ? '+' : '') + resistMod + '=' + total
+          + '+INT' + (intMod >= 0 ? '+' : '') + intMod + '=' + total
           + ' vs DC=' + dc + ') → compulsion=creampie_required';
         (state.roll_log = state.roll_log || []).push(failEntry);
       }
