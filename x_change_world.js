@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.37",
+  "version": "7.7.38",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17324,18 +17324,28 @@ var _xcwHudPollTimer = null;
 // skipped leaves the HUD frozen. Pulling live from chat variables makes the
 // HUD self-healing: even if no one pings it, every render walks back to find
 // the latest AI message's state slot and shows that.
+// v7.7.38 — also fall back to window._owLastTurnState (extension-exposed
+// post-processTurn state). This covers turn 1, where processTurn has computed
+// state but the AI response hasn't been written to chat yet, so chat-variable
+// lookup returns null. Without this, the HUD would show "Waiting for first
+// turn..." even after the user's first message was processed.
 function _xcwReadLiveState() {
   try {
-    if (typeof SillyTavern === 'undefined' || !SillyTavern.getContext) return null;
-    var ctx = SillyTavern.getContext();
-    var chat = (ctx && ctx.chat) || [];
-    for (var i = chat.length - 1; i >= 0; i--) {
-      var msg = chat[i];
-      if (msg && !msg.is_user && !msg.is_system) {
-        var sid = msg.swipe_id || 0;
-        var s = msg.variables && msg.variables[sid] && msg.variables[sid].state;
-        if (s) return s;
+    if (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) {
+      var ctx = SillyTavern.getContext();
+      var chat = (ctx && ctx.chat) || [];
+      for (var i = chat.length - 1; i >= 0; i--) {
+        var msg = chat[i];
+        if (msg && !msg.is_user && !msg.is_system) {
+          var sid = msg.swipe_id || 0;
+          var s = msg.variables && msg.variables[sid] && msg.variables[sid].state;
+          if (s) return s;
+        }
       }
+    }
+    // Fallback: extension's most recent processTurn result, exposed on window
+    if (typeof window !== 'undefined' && window._owLastTurnState) {
+      return window._owLastTurnState;
     }
   } catch (_) { /* fall through */ }
   return null;
@@ -18294,14 +18304,20 @@ function _xcwHudApplyState(el) {
 }
 
 function updateHud(state, config) {
-  _xcwHudState = state;
+  // v7.7.38 — only replace _xcwHudState if the new state has content. A null
+  // or empty state coming in shouldn't wipe a previously-valid snapshot —
+  // the live-state read in buildXcwHudHtml will pick up the chat-variable
+  // version, but the snapshot is the fallback if chat read also fails.
+  if (state && Object.keys(state).length > 0) {
+    _xcwHudState = state;
+  }
   if (config) _xcwHudConfig = config;
-  var html = buildXcwHudHtml(state, _xcwHudConfig);
-  // Refresh inline panel
+  // Always rebuild HTML using whichever state is freshest (live read first,
+  // then current _xcwHudState, then null → "waiting" placeholder).
+  var html = buildXcwHudHtml(_xcwHudState, _xcwHudConfig);
   if (typeof document !== 'undefined') {
     var el = document.getElementById('xcw-hud');
     if (el) { el.innerHTML = html; _xcwHudApplyState(el); }
-    // Always directly update float body if visible — don't rely on closure
     var floatWin = document.getElementById('xcw-float');
     if (floatWin && floatWin.style.display !== 'none') {
       var fb = document.getElementById('xcw-float-body');
