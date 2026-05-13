@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.36",
+  "version": "7.7.37",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7291,7 +7291,7 @@ function registerClimaxSession(engine, opts) {
     const breederSuppress = (fx.includes('breeder') || fx.includes('surrogate'))
                           && !(state.pregnancy && state.pregnancy.confirmed);
     if (breederSuppress) {
-      const dc = parseInt(state._breeder_dc_current || 20, 10);
+      const dc = parseInt(state._breeder_dc_current || 17, 10);
       const intMod = (typeof getStatMod === 'function') ? getStatMod(state, 'INT') : 0;
       const d20 = Math.floor(rng() * 20) + 1;
       const total = d20 + intMod;
@@ -7631,18 +7631,21 @@ function registerBreederLoop(engine, opts) {
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
   engine.registerHandler('resetBreederDC', state => {
     if (!_hasBreederOrSurrogate(state)) return;
-    // v7.7.36 — starting DC dropped from 30 → 20. At 30, d20 (max 20) + INT mod
-    // (max +5) couldn't break 30 — every character begged on every denial, the
-    // +5/pass ramp never engaged, and INT contributed only roll-log flavor.
-    // At DC 20 the math is "high but passable hard roll":
-    //   INT +5 → need d20 ≥ 15 (30%)
-    //   INT +2 → need d20 ≥ 18 (15%)
-    //   INT  0 → need d20 = 20 (5%, nat 20 only)
-    //   INT −2 → impossible (matches "low intel no choice but to beg")
-    // Spec's +5/pass ramp now means a successful hold raises DC to 25 (only
-    // 5% next time even for max-INT), and a second pass locks at DC 30. So
-    // you can hold once, maybe twice if very smart and lucky, then you break.
-    state._breeder_dc_current = 20; delete state._breeder_compulsion;
+    // v7.7.37 — DC set to 17 (was 20). Anchored to INT −3's absolute max roll
+    // (d20=20 + INT_mod=−3 = 17), so low-intel characters mathematically can
+    // never EXCEED the DC — at best they tie on a nat 20, and ties pass.
+    // No crit-success mechanic; INT determines everything via stat math.
+    // First-denial pass odds:
+    //   INT +5 → need d20 ≥ 12 (45%)
+    //   INT +3 → need d20 ≥ 14 (35%)
+    //   INT +1 → need d20 ≥ 16 (25%)
+    //   INT  0 → need d20 ≥ 17 (20%)
+    //   INT −2 → need d20 ≥ 19 (10%)
+    //   INT −3 → need d20 = 20 (5%, ties at DC)
+    // Spec +5/pass ramp: pass→22 (max-INT 20%, mid impossible), pass→27
+    // (everyone impossible). So one hold is the common ceiling; two holds is
+    // a high-INT outlier; three+ holds is mathematically locked off.
+    state._breeder_dc_current = 17; delete state._breeder_compulsion;
     engine.setFlag('breeder_dc_reset_this_turn', { ttl:1 });
   });
   engine.registerHandler('forceBreederOrgasm', state => {
@@ -8153,7 +8156,7 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
     // BREEDER
     if (has('breeder_dc_reset_this_turn') || has('breeder_orgasm_forced_this_turn') || has('breeder_beg_check_this_turn') || has('breeder_beg_passed_this_turn')) {
       let parts = [];
-      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→20 (reset on creampie)');
+      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→17 (reset on creampie)');
       if (has('breeder_orgasm_forced_this_turn')) parts.push('force_orgasm (count=' + (shadow._breeder_orgasm_count || 0) + ')');
       if (has('breeder_beg_check_this_turn')) {
         if (has('breeder_beg_denied_this_turn')) {
