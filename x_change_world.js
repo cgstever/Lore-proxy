@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.33",
+  "version": "7.7.34",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7273,15 +7273,57 @@ function registerClimaxSession(engine, opts) {
     const a = state.arousal || 0;
     if (a < 80) return;
     const fx = state.active_effects || [];
-    if ((fx.includes('breeder') || fx.includes('surrogate')) && !(state.pregnancy && state.pregnancy.confirmed)) return;
     if (fx.includes('denial')) return;
     engine.setFlag('arousal_gate_attempt_this_turn', { ttl:1 });
-    if (rollD100() <= arousalGateThreshold) engine.setFlag('character_orgasm_this_turn', { ttl:1 });
+    const percentile_passed = rollD100() <= arousalGateThreshold;
+    if (!percentile_passed) return;
+    // v7.7.34 — percentile said "body would orgasm now". If breeder/surrogate is
+    // suppressing pre-pregnancy, this is the trigger for the compulsion loop:
+    // d20 + breeder_resist_mod vs _breeder_dc_current (starts 30, +5 per pass).
+    // PASS → composure holds, DC ramps. FAIL → set compulsion=creampie_required,
+    // character begs body-and-voice until creampie resets the cycle. This is the
+    // spec's per-denied-orgasm check; previously the compulsion roll happened
+    // only on male external climax with a hardcoded DC=15, which is wrong.
+    const breederSuppress = (fx.includes('breeder') || fx.includes('surrogate'))
+                          && !(state.pregnancy && state.pregnancy.confirmed);
+    if (breederSuppress) {
+      const dc = parseInt(state._breeder_dc_current || 30, 10);
+      const resistMod = (typeof _snapshotEffectResistMod === 'function')
+        ? _snapshotEffectResistMod(state, 'breeder') : 0;
+      const d20 = Math.floor(rng() * 20) + 1;
+      const total = d20 + resistMod;
+      engine.setFlag('breeder_beg_check_this_turn', { ttl: 1 });
+      if (total >= dc) {
+        // Composure holds — DC ramps for next denied orgasm
+        state._breeder_dc_current = dc + 5;
+        delete state._breeder_compulsion;
+        engine.setFlag('breeder_beg_passed_this_turn', { ttl: 1 });
+        var passEntry = 'breeder_compulsion:HOLD(d20=' + d20
+          + (resistMod >= 0 ? '+' : '') + resistMod + '=' + total
+          + ' vs DC=' + dc + ') DC→' + (dc + 5);
+        (state.roll_log = state.roll_log || []).push(passEntry);
+      } else {
+        // Compulsion fires — begging state until creampie
+        state._breeder_compulsion = 'creampie_required';
+        state._denial_frustration = (state._denial_frustration || 0) + 1;
+        engine.setFlag('breeder_beg_denied_this_turn', { ttl: 1 });
+        var failEntry = 'breeder_compulsion:BEG(d20=' + d20
+          + (resistMod >= 0 ? '+' : '') + resistMod + '=' + total
+          + ' vs DC=' + dc + ') → compulsion=creampie_required';
+        (state.roll_log = state.roll_log || []).push(failEntry);
+      }
+      return;  // Orgasm denied, no character_orgasm_this_turn flag
+    }
+    engine.setFlag('character_orgasm_this_turn', { ttl: 1 });
   });
   engine.registerRule({ name:'male_climaxed_consequences', requires:['detected_male_climaxed'], actions:[{type:'call_handler', name:'triggerSessionEnd'}] });
   engine.registerRule({ name:'session_end_consequences', requires:['session_ended_this_turn'], actions:[{type:'call_handler', name:'resetSessionCounters'},{type:'call_handler', name:'clearTransientSideEffects'}] });
   engine.registerRule({ name:'session_engage_on_sex_detected', requires:['detected_sex_engagement'], actions:[{type:'call_handler', name:'engageSession'}] });
   engine.registerRule({ name:'arousal_gate_orgasm_on_male_climax', requires:['detected_male_climaxed'], actions:[{type:'call_handler', name:'arousalGateOrgasmCheck'}] });
+  // v7.7.34 — also fire arousal-gate check on every sex-engaged turn so the
+  // compulsion loop can trigger during active sex (not only when male climaxes).
+  // Handler early-returns if arousal < 80, so cold-turn cost is zero.
+  engine.registerRule({ name:'arousal_gate_orgasm_on_sex_engaged', requires:['detected_sex_engagement'], actions:[{type:'call_handler', name:'arousalGateOrgasmCheck'}] });
   engine.registerRule({ name:'character_orgasm_consequences', requires:['character_orgasm_this_turn'], actions:[{type:'call_handler', name:'incrementCharacterOrgasmCounters'},{type:'call_handler', name:'resetArousalPostOrgasm'}] });
   return { Session };
 }
@@ -7491,6 +7533,50 @@ const _BREEDER_BODY_PULL = {
   }
 };
 
+// v7.7.34 — POST-ORGASM REGISTER. Fires for 2 turns after a forced breeder
+// orgasm (the creampie-orgasm), gating "over the top" body-collapse fragments
+// from phrase-DB sections C (cervix-impact convulsion) + D (post-orgasm voice
+// returns marked) + L6 ("Breeder orgasms are more intense than any other
+// sensation"). Window decays each turn: tier=1 (immediate aftermath) →
+// tier=2 (coming back, marked) → off.
+const _BREEDER_POSTORGASM = {
+  immediate: [
+    "still ringing — body twitching small involuntary spasms from the cervix-pulse aftershocks, voice catching on nothing as breath skips, can't quite focus",
+    "stunned-quiet, thighs trembling around what's still buried, hips chasing the last of it without permission, eyes far away",
+    "everything ringing — that was unlike anything else, body still hot from the inside out, dripping and dazed and unable to put words together",
+    "the climax hasn't fully released its grip — small involuntary waves keep rolling through every few seconds, each one pulling another quiet sound out of her",
+    "looking through you, not at you — the high so loud the room is muted around her, lips parted, body soft and stunned and still leaking",
+    "a kind of awe-shock written into her face — the body got something it didn't know existed and the mind is several beats behind processing it"
+  ],
+  settling: [
+    "voice is back but marked — words coming a beat slow, eyes still a little far away, posture warm-soft and undefended",
+    "body humming quiet, the cervix-throb fading but the memory of it loud, hips still occasionally twitching toward emptiness",
+    "she's there but coming back through layers — voice slightly scratchy, gaze steadier but the dazed-soft cast hasn't fully cleared",
+    "residual warm-soft tone in everything she does — sitting different, breathing different, present but rewired",
+    "the look in her eyes hasn't fully reset — present, functional, but something behind it is still rearranging from what just happened"
+  ]
+};
+
+function _pickBreederPostOrgasm(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0 && fx.indexOf('surrogate') < 0) return null;
+  var window = parseInt(state._breeder_postorgasm_window || 0, 10);
+  if (window <= 0) return null;
+  // window=2 → immediate (just-happened turn); window=1 → settling (turn after)
+  var tier = (window >= 2) ? 'immediate' : 'settling';
+  var pool = _BREEDER_POSTORGASM[tier] || [];
+  if (!pool.length) return null;
+  var seen = Array.isArray(state._breeder_postorgasm_seen) ? state._breeder_postorgasm_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_postorgasm_seen = seen;
+  return { tier: tier, text: pick };
+}
+
 function _pickBreederBodyPull(state) {
   if (!state || typeof state !== 'object') return null;
   var fx = state.active_effects || [];
@@ -7538,7 +7624,7 @@ function registerBreederLoop(engine, opts) {
   opts = opts || {};
   const rng = opts.rng || Math.random;
   const rollD20 = () => Math.floor(rng() * 20) + 1;
-  ['breeder_dc_reset_this_turn','breeder_orgasm_forced_this_turn','breeder_beg_check_this_turn','breeder_beg_denied_this_turn']
+  ['breeder_dc_reset_this_turn','breeder_orgasm_forced_this_turn','breeder_beg_check_this_turn','breeder_beg_denied_this_turn','breeder_beg_passed_this_turn']
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
   engine.registerHandler('resetBreederDC', state => {
     if (!_hasBreederOrSurrogate(state)) return;
@@ -7553,23 +7639,23 @@ function registerBreederLoop(engine, opts) {
     // v7.7.30 — first arousal-climb closure marks the discovery arc as complete.
     // Subsequent climbs use 'familiar' framing in the body-pull narration.
     state._breeder_first_climb_done = true;
+    // v7.7.34 — open a 2-turn post-orgasm "over the top" register window.
+    // _breeder_postorgasm_window decrements each turn in the body-pull pass;
+    // while > 0, the model gets the cervix-aftershock / coming-back-marked
+    // fragments alongside whatever else is active.
+    state._breeder_postorgasm_window = 2;
     engine.setFlag('breeder_orgasm_forced_this_turn', { ttl:1 });
     engine.setFlag('character_orgasm_this_turn', { ttl:1 });
   });
-  engine.registerHandler('rollBreederBegPath', state => {
-    if (!_hasBreederOrSurrogate(state)) return;
-    if (engine.isFlagActive('detected_creampie_vaginal')) return;
-    if (state.pregnancy && state.pregnancy.confirmed) return;
-    if ((state.arousal || 0) < ORG_ZONE) return;
-    engine.setFlag('breeder_beg_check_this_turn', { ttl:1 });
-    if (rollD20() + getStatMod(state, 'INT') < 15) {
-      state._denial_frustration = (state._denial_frustration || 0) + 1;
-      engine.setFlag('breeder_beg_denied_this_turn', { ttl:1 });
-    }
-  });
+  // v7.7.34 — old rollBreederBegPath removed. It fired only on detected_male_climaxed
+  // with a hardcoded DC=15 and incremented _denial_frustration. The compulsion roll
+  // now happens inside arousalGateOrgasmCheck where it belongs: when the percentile
+  // gate says the body would have orgasmed and breeder is suppressing, d20 + breeder
+  // resist mod vs _breeder_dc_current (start 30, +5 per pass). Failed roll sets
+  // _breeder_compulsion='creampie_required'. This is the per-denied-orgasm check
+  // the spec describes, on the correct trigger.
   engine.registerRule({ name:'breeder_dc_reset_on_creampie', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'resetBreederDC'}] });
   engine.registerRule({ name:'breeder_force_orgasm_on_creampie', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'forceBreederOrgasm'}] });
-  engine.registerRule({ name:'breeder_beg_path_on_male_climax', requires:['detected_male_climaxed'], actions:[{type:'call_handler', name:'rollBreederBegPath'}] });
 }
 
 function _graceFloorForTurns(t) { if (t >= 2) return 6; if (t === 1) return 4; return 2; }
@@ -7913,6 +7999,11 @@ const REBUILD_OWNED_FIELDS = [
   // _breeder_pull_seen is the rotation guard (last 3 fragments picked, to keep
   // narration from repeating itself turn over turn).
   '_breeder_first_climb_done', '_breeder_pull_seen',
+  // v7.7.34 — compulsion-loop persistence. _breeder_compulsion='creampie_required'
+  // is set by arousalGateOrgasmCheck when the d20 fails; cleared by resetBreederDC
+  // on creampie. Post-orgasm window opens for 2 turns after the forced breeder
+  // orgasm so the over-the-top register fires across the immediate + settling turns.
+  '_breeder_compulsion', '_breeder_postorgasm_window', '_breeder_postorgasm_seen',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -8046,11 +8137,19 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
       lines.push(line);
     }
     // BREEDER
-    if (has('breeder_dc_reset_this_turn') || has('breeder_orgasm_forced_this_turn') || has('breeder_beg_check_this_turn')) {
+    if (has('breeder_dc_reset_this_turn') || has('breeder_orgasm_forced_this_turn') || has('breeder_beg_check_this_turn') || has('breeder_beg_passed_this_turn')) {
       let parts = [];
-      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→30');
+      if (has('breeder_dc_reset_this_turn'))      parts.push('DC→30 (reset on creampie)');
       if (has('breeder_orgasm_forced_this_turn')) parts.push('force_orgasm (count=' + (shadow._breeder_orgasm_count || 0) + ')');
-      if (has('breeder_beg_check_this_turn'))     parts.push('beg_path' + (has('breeder_beg_denied_this_turn') ? '→denied (frustration=' + (shadow._denial_frustration || 0) + ')' : '→composed'));
+      if (has('breeder_beg_check_this_turn')) {
+        if (has('breeder_beg_denied_this_turn')) {
+          parts.push('compulsion→BEG (DC=' + (shadow._breeder_dc_current || '?') + ', compulsion=creampie_required)');
+        } else if (has('breeder_beg_passed_this_turn')) {
+          parts.push('compulsion→HOLD (DC→' + (shadow._breeder_dc_current || '?') + ')');
+        } else {
+          parts.push('compulsion_check (no result)');
+        }
+      }
       lines.push('BREEDER: ' + parts.join(', '));
     }
     // PREGNANCY
@@ -14968,6 +15067,25 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     var _breederPull = _pickBreederBodyPull(state);
     if (_breederPull) {
       stateContent.push('<body-pull arc="' + _breederPull.arc + '" tier="' + _breederPull.tier + '">' + _breederPull.text + '</body-pull>');
+    }
+    // v7.7.34 — post-orgasm over-the-top register (1-2 turns after creampie-orgasm).
+    // Decrements the window AFTER picking so the immediate-tier fires on the
+    // creampie turn itself, settling-tier on the next turn, then off.
+    var _postOrgasm = _pickBreederPostOrgasm(state);
+    if (_postOrgasm) {
+      stateContent.push('<post-orgasm tier="' + _postOrgasm.tier + '">' + _postOrgasm.text + '</post-orgasm>');
+    }
+    if (state && state._breeder_postorgasm_window > 0) {
+      state._breeder_postorgasm_window = state._breeder_postorgasm_window - 1;
+      if (state._breeder_postorgasm_window <= 0) {
+        delete state._breeder_postorgasm_window;
+        delete state._breeder_postorgasm_seen;
+      }
+    }
+    // v7.7.34 — also surface compulsion state when set so the model has explicit
+    // framing for the begging arc instead of inferring from arousal alone.
+    if (state && state._breeder_compulsion === 'creampie_required') {
+      stateContent.push('<compulsion>The character has failed the composure check and is in a begging state — body and voice signaling desperately for a vaginal creampie. This is not flirtation; it\'s the breeder mechanic at full compulsion. The state persists until a same-turn vaginal creampie resets it. Render in character voice — the begging takes the shape of THEIR personality, not a generic plea.</compulsion>');
     }
   }
   if (stateContent.length || _resistBeats.length) {
