@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.38",
+  "version": "7.7.39",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7452,176 +7452,13 @@ function _isMotherhoodMode(state, engine) {
 }
 function _hasBreederOrSurrogate(state) { const fx = state.active_effects || []; return fx.includes('breeder') || fx.includes('surrogate'); }
 
-// ── v7.7.31 — BREEDER BODY-PULL FRAGMENTS ─────────────────────────────────
-// Surfaces the body's "empty ache / clenching around nothing" signal during
-// the arousal climb — drawn from the phrase DB at
-// engine_work/_phrase_db_breeder_bimbo.md (sections A1-A13).
-//
-// THREE arcs (intake consent × first-climb status):
-//   covert_discovery — covert intake + first climb not yet closed.
-//                      Most alien framing — character has no "I took a pill"
-//                      frame to attach the body signals to. Realization is
-//                      doubled: first the body, then "someone did this".
-//   discovery        — voluntary or forced intake + first climb not yet closed.
-//                      Character knows they took the pill (or was force-fed
-//                      one). Naming the sensation in real time. Curiosity or
-//                      defiance depending on intake, but the FRAME is intact.
-//   familiar         — any intake + first creampie-orgasm has fired.
-//                      Body-pull is known gravity. No discovery beats.
-//
-// THREE arousal tiers (re-tiered in v7.7.31 — peak now anchors at 50, not 75,
-// so the "I'm so empty" register fires well before climax-territory arousal):
-//   onset      — arousal 1-29   (cold)              — faint clenching, easy to dismiss
-//   building   — arousal 30-49  (warm)              — explicit empty pull, "this is the pill"
-//   peak       — arousal 50-100 (build → edge)      — "I'm dying, I'm so empty" register
-//
-// Sampling: one fragment per applicable turn, rotation guard via
-// state._breeder_pull_seen (last 3 picks excluded from next sample).
-const _BREEDER_BODY_PULL = {
-  covert_discovery: {
-    onset: [
-      "a small wrongness inside the body that doesn't have an obvious cause — the character is going to be looking for explanations in the wrong places for a while",
-      "internal clenching that didn't exist a few minutes ago — alarming in a way the character is filing as 'something I ate' or 'maybe I'm getting sick'",
-      "a faint empty pull deep inside that reads as foreign, not arousal — the character has no frame for what this is",
-      "running warmer than normal with no obvious trigger — body temperature off, breath catching at nothing, the character glancing around for what's wrong"
-    ],
-    building: [
-      "the clenching has rhythm now and the character is starting to realize this isn't 'something they ate' — the timing tracks with arousal and that itself is alarming",
-      "an empty pull the character is trying to name and failing — too specific to be illness, too anatomical to be mood, the explanation list shrinking",
-      "thighs not staying together the way they should — the body is doing things on its own and the character has just noticed they don't have full control",
-      "the realization arriving in stages: this is wrong, this isn't me, something was done to me — the body is asking for something the character did not agree to want"
-    ],
-    peak: [
-      "the pull has overtaken everything and the character has just put it together — someone did this, this is a pill, the body is demanding insemination and the demand isn't theirs",
-      "an emptiness loud enough to drown out the betrayal — knowing what was done doesn't make the body stop asking",
-      "the character is screaming internally about violation while the body is signaling availability with every breath — two completely separate selves operating in parallel"
-    ]
-  },
-  discovery: {
-    onset: [
-      "an internal clenching the new body wasn't doing before — easy to dismiss the first time, harder the second",
-      "a small empty pull deep behind the navel — registers as 'huh' before it registers as anything else",
-      "running a degree or two warmer than the scene calls for, no obvious reason — the body has decided something quietly",
-      "the body wanting to open in ways the character keeps overriding without quite knowing why",
-      "an itch that isn't actually an itch — more like a muscle wanting to grip something that isn't there"
-    ],
-    building: [
-      "the empty pull has rhythm now — clenching around nothing in a way the character is starting to recognize as the pill working",
-      "thighs not staying together the way they used to — a presentation reflex appearing without permission",
-      "body temperature elevated past what arousal alone would explain — running hot, lubricating, the inside aching to be filled",
-      "the hollow inside has become the loudest signal — louder than the scene, louder than thought",
-      "realization landing in real time: this is what the pill does, it's making the body want to be filled"
-    ],
-    peak: [
-      "the pull has stopped being discoverable and started being everything — the body is demanding insemination and the demand is no longer something the mind can step around",
-      "an emptiness the character would have called pain if the pull weren't also pleasure — the new body's primary signal at full volume",
-      "thoughts narrowing to a single channel — be filled, be filled, be filled — and the character is realizing they're going to say it out loud"
-    ]
-  },
-  familiar: {
-    onset: [
-      "the early clenching, familiar by now — the body announcing the program before the mind catches up",
-      "pelvic restlessness running its standard pattern, known and expected",
-      "running warm and starting to want, on schedule"
-    ],
-    building: [
-      "the empty pull at full operational volume — clenching around nothing, thighs apart, body open, the pill doing what the pill does",
-      "presenting without thinking, signaling availability with practiced ease",
-      "the inside aching the way it always aches before being filled — familiar territory"
-    ],
-    peak: [
-      "demand at full volume, body in the position it always ends up in, the words a beat away from coming out",
-      "edge-state pull — empty, hungry, and nothing else is going to register until that gets fixed"
-    ]
-  }
-};
+// v7.7.39 — body-pull data + pickers were originally placed here (v7.7.30)
+// but ended up INSIDE the _xRebuildSystem IIFE (which opens at line ~6587).
+// That made them invisible to buildHeader (outside the IIFE) → ReferenceError
+// on every non-TX turn → processTurn threw → writeTurnState never fired →
+// state never persisted. Moved out — see block right after `})();`.
+// (Empty here on purpose; do not re-add the const/function declarations here.)
 
-// v7.7.34 — POST-ORGASM REGISTER. Fires for 2 turns after a forced breeder
-// orgasm (the creampie-orgasm), gating "over the top" body-collapse fragments
-// from phrase-DB sections C (cervix-impact convulsion) + D (post-orgasm voice
-// returns marked) + L6 ("Breeder orgasms are more intense than any other
-// sensation"). Window decays each turn: tier=1 (immediate aftermath) →
-// tier=2 (coming back, marked) → off.
-const _BREEDER_POSTORGASM = {
-  immediate: [
-    "still ringing — body twitching small involuntary spasms from the cervix-pulse aftershocks, voice catching on nothing as breath skips, can't quite focus",
-    "stunned-quiet, thighs trembling around what's still buried, hips chasing the last of it without permission, eyes far away",
-    "everything ringing — that was unlike anything else, body still hot from the inside out, dripping and dazed and unable to put words together",
-    "the climax hasn't fully released its grip — small involuntary waves keep rolling through every few seconds, each one pulling another quiet sound out of her",
-    "looking through you, not at you — the high so loud the room is muted around her, lips parted, body soft and stunned and still leaking",
-    "a kind of awe-shock written into her face — the body got something it didn't know existed and the mind is several beats behind processing it"
-  ],
-  settling: [
-    "voice is back but marked — words coming a beat slow, eyes still a little far away, posture warm-soft and undefended",
-    "body humming quiet, the cervix-throb fading but the memory of it loud, hips still occasionally twitching toward emptiness",
-    "she's there but coming back through layers — voice slightly scratchy, gaze steadier but the dazed-soft cast hasn't fully cleared",
-    "residual warm-soft tone in everything she does — sitting different, breathing different, present but rewired",
-    "the look in her eyes hasn't fully reset — present, functional, but something behind it is still rearranging from what just happened"
-  ]
-};
-
-function _pickBreederPostOrgasm(state) {
-  if (!state || typeof state !== 'object') return null;
-  var fx = state.active_effects || [];
-  if (fx.indexOf('breeder') < 0 && fx.indexOf('surrogate') < 0) return null;
-  var window = parseInt(state._breeder_postorgasm_window || 0, 10);
-  if (window <= 0) return null;
-  // window=2 → immediate (just-happened turn); window=1 → settling (turn after)
-  var tier = (window >= 2) ? 'immediate' : 'settling';
-  var pool = _BREEDER_POSTORGASM[tier] || [];
-  if (!pool.length) return null;
-  var seen = Array.isArray(state._breeder_postorgasm_seen) ? state._breeder_postorgasm_seen : [];
-  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
-  if (!fresh.length) { fresh = pool.slice(); seen = []; }
-  var pick = fresh[Math.floor(Math.random() * fresh.length)];
-  seen.push(pick);
-  while (seen.length > 3) seen.shift();
-  state._breeder_postorgasm_seen = seen;
-  return { tier: tier, text: pick };
-}
-
-function _pickBreederBodyPull(state) {
-  if (!state || typeof state !== 'object') return null;
-  var fx = state.active_effects || [];
-  if (fx.indexOf('breeder') < 0) return null;
-  // Post-conception: motherhood mode owns the body signal; pull narration ends.
-  if (state.pregnancy && state.pregnancy.confirmed) {
-    var curTurn = state.current_turn != null ? state.current_turn : 0;
-    if (state._conception_turn !== curTurn) return null;
-  }
-  var arousal = parseInt(state.arousal || 0, 10);
-  if (arousal <= 0) return null;
-
-  // v7.7.31 — peak anchors at 50 (was 75). The "empty / I'm dying" register
-  // now lands before climax-territory arousal, matching the source phrasing
-  // arc (the books peak this register well before orgasm).
-  var tier = (arousal < 30) ? 'onset' : (arousal < 50) ? 'building' : 'peak';
-
-  // v7.7.31 — arc selection. Covert intake gets its own discovery flavor
-  // (alien / "what was done to me" framing) until first climb closes.
-  var arc;
-  if (state._breeder_first_climb_done) {
-    arc = 'familiar';
-  } else if (state._intake_consent === 'covert') {
-    arc = 'covert_discovery';
-  } else {
-    arc = 'discovery';
-  }
-  var pool = ((_BREEDER_BODY_PULL[arc] || {})[tier]) || [];
-  if (!pool.length) return null;
-
-  // Rotation guard: exclude the last 3 picks from the next sample
-  var seen = Array.isArray(state._breeder_pull_seen) ? state._breeder_pull_seen : [];
-  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
-  if (!fresh.length) { fresh = pool.slice(); seen = []; }
-  var pick = fresh[Math.floor(Math.random() * fresh.length)];
-
-  seen.push(pick);
-  while (seen.length > 3) seen.shift();
-  state._breeder_pull_seen = seen;
-
-  return { arc: arc, tier: tier, text: pick };
-}
 function _hasPregnancyEligiblePill(state) { const r = PILL_RULES[state.active_pill]; return !!(r && r.preg_eligible); }
 function registerBreederLoop(engine, opts) {
   opts = opts || {};
@@ -8251,6 +8088,164 @@ return {
 })();
 
 // ─── END REBUILD INTEGRATION ───────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────────────────────
+// v7.7.39 — BREEDER BODY-PULL FRAGMENTS + POST-ORGASM REGISTER
+// Moved here (outside the _xRebuildSystem IIFE) so buildHeader can actually
+// reference them. Previously declared inside the IIFE (v7.7.30/v7.7.34), where
+// they were invisible to outer-scope callers. That caused processTurn to throw
+// ReferenceError on every non-TX turn — and the extension's inner try-catch
+// swallowed it, so writeTurnState never fired and state never persisted.
+//
+// THREE arcs (intake consent × first-climb status):
+//   covert_discovery — covert intake + first climb not yet closed.
+//                      Most alien framing — character has no "I took a pill"
+//                      frame to attach the body signals to. Realization is
+//                      doubled: first the body, then "someone did this".
+//   discovery        — voluntary or forced intake + first climb not yet closed.
+//                      Character knows they took the pill. Naming the
+//                      sensation in real time.
+//   familiar         — any intake + first creampie-orgasm has fired.
+//                      Body-pull is known gravity. No discovery beats.
+//
+// THREE arousal tiers (peak anchors at 50, not 75 — the "I'm so empty"
+// register fires well before climax-territory arousal):
+//   onset      — arousal 1-29   (cold)              — faint clenching
+//   building   — arousal 30-49  (warm)              — explicit empty pull
+//   peak       — arousal 50-100 (build → edge)      — "I'm dying" register
+//
+// Sampling: one fragment per applicable turn, rotation guard via
+// state._breeder_pull_seen (last 3 picks excluded from next sample).
+// ──────────────────────────────────────────────────────────────────────────────
+
+const _BREEDER_BODY_PULL = {
+  covert_discovery: {
+    onset: [
+      "a small wrongness inside the body that doesn't have an obvious cause — the character is going to be looking for explanations in the wrong places for a while",
+      "internal clenching that didn't exist a few minutes ago — alarming in a way the character is filing as 'something I ate' or 'maybe I'm getting sick'",
+      "a faint empty pull deep inside that reads as foreign, not arousal — the character has no frame for what this is",
+      "running warmer than normal with no obvious trigger — body temperature off, breath catching at nothing, the character glancing around for what's wrong"
+    ],
+    building: [
+      "the clenching has rhythm now and the character is starting to realize this isn't 'something they ate' — the timing tracks with arousal and that itself is alarming",
+      "an empty pull the character is trying to name and failing — too specific to be illness, too anatomical to be mood, the explanation list shrinking",
+      "thighs not staying together the way they should — the body is doing things on its own and the character has just noticed they don't have full control",
+      "the realization arriving in stages: this is wrong, this isn't me, something was done to me — the body is asking for something the character did not agree to want"
+    ],
+    peak: [
+      "the pull has overtaken everything and the character has just put it together — someone did this, this is a pill, the body is demanding insemination and the demand isn't theirs",
+      "an emptiness loud enough to drown out the betrayal — knowing what was done doesn't make the body stop asking",
+      "the character is screaming internally about violation while the body is signaling availability with every breath — two completely separate selves operating in parallel"
+    ]
+  },
+  discovery: {
+    onset: [
+      "an internal clenching the new body wasn't doing before — easy to dismiss the first time, harder the second",
+      "a small empty pull deep behind the navel — registers as 'huh' before it registers as anything else",
+      "running a degree or two warmer than the scene calls for, no obvious reason — the body has decided something quietly",
+      "the body wanting to open in ways the character keeps overriding without quite knowing why",
+      "an itch that isn't actually an itch — more like a muscle wanting to grip something that isn't there"
+    ],
+    building: [
+      "the empty pull has rhythm now — clenching around nothing in a way the character is starting to recognize as the pill working",
+      "thighs not staying together the way they used to — a presentation reflex appearing without permission",
+      "body temperature elevated past what arousal alone would explain — running hot, lubricating, the inside aching to be filled",
+      "the hollow inside has become the loudest signal — louder than the scene, louder than thought",
+      "realization landing in real time: this is what the pill does, it's making the body want to be filled"
+    ],
+    peak: [
+      "the pull has stopped being discoverable and started being everything — the body is demanding insemination and the demand is no longer something the mind can step around",
+      "an emptiness the character would have called pain if the pull weren't also pleasure — the new body's primary signal at full volume",
+      "thoughts narrowing to a single channel — be filled, be filled, be filled — and the character is realizing they're going to say it out loud"
+    ]
+  },
+  familiar: {
+    onset: [
+      "the early clenching, familiar by now — the body announcing the program before the mind catches up",
+      "pelvic restlessness running its standard pattern, known and expected",
+      "running warm and starting to want, on schedule"
+    ],
+    building: [
+      "the empty pull at full operational volume — clenching around nothing, thighs apart, body open, the pill doing what the pill does",
+      "presenting without thinking, signaling availability with practiced ease",
+      "the inside aching the way it always aches before being filled — familiar territory"
+    ],
+    peak: [
+      "demand at full volume, body in the position it always ends up in, the words a beat away from coming out",
+      "edge-state pull — empty, hungry, and nothing else is going to register until that gets fixed"
+    ]
+  }
+};
+
+// Post-orgasm register (v7.7.34). Fires 2 turns after a forced breeder orgasm.
+const _BREEDER_POSTORGASM = {
+  immediate: [
+    "still ringing — body twitching small involuntary spasms from the cervix-pulse aftershocks, voice catching on nothing as breath skips, can't quite focus",
+    "stunned-quiet, thighs trembling around what's still buried, hips chasing the last of it without permission, eyes far away",
+    "everything ringing — that was unlike anything else, body still hot from the inside out, dripping and dazed and unable to put words together",
+    "the climax hasn't fully released its grip — small involuntary waves keep rolling through every few seconds, each one pulling another quiet sound out of her",
+    "looking through you, not at you — the high so loud the room is muted around her, lips parted, body soft and stunned and still leaking",
+    "a kind of awe-shock written into her face — the body got something it didn't know existed and the mind is several beats behind processing it"
+  ],
+  settling: [
+    "voice is back but marked — words coming a beat slow, eyes still a little far away, posture warm-soft and undefended",
+    "body humming quiet, the cervix-throb fading but the memory of it loud, hips still occasionally twitching toward emptiness",
+    "she's there but coming back through layers — voice slightly scratchy, gaze steadier but the dazed-soft cast hasn't fully cleared",
+    "residual warm-soft tone in everything she does — sitting different, breathing different, present but rewired",
+    "the look in her eyes hasn't fully reset — present, functional, but something behind it is still rearranging from what just happened"
+  ]
+};
+
+function _pickBreederPostOrgasm(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0 && fx.indexOf('surrogate') < 0) return null;
+  var window = parseInt(state._breeder_postorgasm_window || 0, 10);
+  if (window <= 0) return null;
+  var tier = (window >= 2) ? 'immediate' : 'settling';
+  var pool = _BREEDER_POSTORGASM[tier] || [];
+  if (!pool.length) return null;
+  var seen = Array.isArray(state._breeder_postorgasm_seen) ? state._breeder_postorgasm_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_postorgasm_seen = seen;
+  return { tier: tier, text: pick };
+}
+
+function _pickBreederBodyPull(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0) return null;
+  if (state.pregnancy && state.pregnancy.confirmed) {
+    var curTurn = state.current_turn != null ? state.current_turn : 0;
+    if (state._conception_turn !== curTurn) return null;
+  }
+  var arousal = parseInt(state.arousal || 0, 10);
+  if (arousal <= 0) return null;
+  var tier = (arousal < 30) ? 'onset' : (arousal < 50) ? 'building' : 'peak';
+  var arc;
+  if (state._breeder_first_climb_done) {
+    arc = 'familiar';
+  } else if (state._intake_consent === 'covert') {
+    arc = 'covert_discovery';
+  } else {
+    arc = 'discovery';
+  }
+  var pool = ((_BREEDER_BODY_PULL[arc] || {})[tier]) || [];
+  if (!pool.length) return null;
+  var seen = Array.isArray(state._breeder_pull_seen) ? state._breeder_pull_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_pull_seen = seen;
+  return { arc: arc, tier: tier, text: pick };
+}
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // HELPER FUNCTIONS
