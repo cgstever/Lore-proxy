@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.47",
+  "version": "7.7.48",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -2757,7 +2757,7 @@ const LORE_DATA =
     "breeder": {
       "min_flavor_arousal": 21,
       "min_rule_arousal": 21,
-      "injection_rule": "RULE: this character climaxes only on a vaginal creampie this scene — semen inside the vagina is the orgasm trigger. Without that event this turn, no climax fires. With it, climax fires automatically.",
+      "injection_rule": "RULE: character cannot orgasm this turn. Do not write climax, release, or orgasm of any kind.",
       "on_birth": {
         "attempt_counter": "birth_revert_attempts",
         "impossible_set_flag_false": "post_birth_revert_pass",
