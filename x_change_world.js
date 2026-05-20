@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.40",
+  "version": "7.7.41",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -9583,6 +9583,104 @@ const _EFFECT_RESISTANCE_BEATS = {
       INT: 'no reasoning about it — breeding is not a topic of thought any more than circulation is',
     },
   },
+  // v7.7.41 — BREEDER FIRST-TIME RESISTANCE BEATS
+  // Same mechanical state per band/stat as `breeder`, but reframed for the
+  // first-time arc — the character is feeling these sensations for the first
+  // time and trying to make sense of them. The composure here is QUESTIONING,
+  // not RESISTING-A-KNOWN-THREAT. Selected by `_buildResistanceBeats` when
+  // `state._breeder_first_climb_done` is falsy. Once it flips true (first
+  // forced breeder-orgasm), the picker switches to `breeder` (the familiar
+  // table). The pull becomes known gravity after that.
+  breeder_first_time: {
+    10: {
+      CON: 'the body has no pull yet — but the character is watching to see if one will start, distrusting the calm',
+      WIS: 'can think about reproduction normally — but a flag in the back of the mind keeps glancing at the body, expecting something',
+      DOM: 'authority feels normal — except the character has started noticing that they\'re checking that it feels normal',
+      SUB: 'no pull toward receptivity yet — but the character is watching to see if one shows up',
+      CHA: 'presentation unchanged — but the character has started self-monitoring for shifts that aren\'t there yet',
+      INT: 'no compulsion to reason about — but the character keeps mentally reaching for a definition of what the effect even is',
+    },
+    9: {
+      CON: 'the warmth registered as foreign and weird — the character is trying to decide if they imagined it',
+      WIS: 'gut flagged it as not-self — but flagging it makes the character question whether their gut is reliable now',
+      DOM: 'authority undisturbed — but the character is quietly testing whether they could refuse, just to check',
+      SUB: 'no real shift in receptivity — but the moment felt strange enough to track and the tracking itself is new',
+      CHA: 'monitoring their own posture for changes — none yet, but the monitoring is the change',
+      INT: 'filed as "the pill might do something" — the character is filing without knowing what file to use',
+    },
+    8: {
+      CON: 'the warmth keeps coming back during arousal — the character calls it "weird" and tries to ignore it',
+      WIS: 'recognizes the sensation but can\'t quite name it — knows it\'s the pill but doesn\'t have a word for what',
+      DOM: 'boundaries hold but the character is now checking them — the checking didn\'t used to be necessary',
+      SUB: 'slight softening during intimate moments — the character notices and tries to figure out if it\'s the pill or just the moment',
+      CHA: 'catches the lingering glance but isn\'t sure if it counts — second-guessing what\'s normal versus what\'s the effect',
+      INT: 'reasoning has a new bias the character notices: "is this really me thinking, or is this the pill thinking?"',
+    },
+    7: {
+      CON: 'hollow pull behind the navel — the character is calling it "hunger" or "tired" and not yet "pill"',
+      WIS: 'the warning comes one step late and the character is trying to figure out why their gut isn\'t keeping up',
+      DOM: 'saying "I don\'t want that" out loud — the character hears themselves say it and wonders when that became necessary',
+      SUB: 'the receptivity spike feels alien and the character can\'t decide whether to fight it or examine it',
+      CHA: 'the body language shift is detectable but the character can\'t be sure it\'s not just being self-conscious',
+      INT: 'the "what if" is forming before the "no" — the character notices the order and is unsettled by it',
+    },
+    6: {
+      CON: 'the emptiness has physical weight and the character is alarmed at how convincing it feels as real hunger',
+      WIS: 'sometimes catches the compulsion, sometimes doesn\'t — the character has lost confidence in their own judgment',
+      DOM: '"I don\'t want that" has softened to "I don\'t think I want that" — the character heard the softening and is bothered by it',
+      SUB: 'receptivity has momentum and the character is asking themselves "why is yes easier than no now"',
+      CHA: 'presentation shifts feel conscious and involuntary at the same time — the character can\'t tell which is which',
+      INT: 'can argue both sides — the character is unnerved by how plausible "it\'s just biology" is starting to sound',
+    },
+    5: {
+      CON: 'the throb sharpens with arousal — the character is having to actively name it as "the pill" to push back',
+      WIS: '"maybe just this once" formed as a thought before the character caught it — they\'re shaken by where that came from',
+      DOM: 'saying no costs energy and the character is asking themselves why it didn\'t used to',
+      SUB: 'the body positions itself without asking — the character notices the position and tries to remember choosing it',
+      CHA: 'mate-seeking behaviors feel natural now — the character can\'t tell which were natural before and which weren\'t',
+      INT: 'catches themselves building the case for "just once" — the character is now distrusting their own reasoning',
+    },
+    4: {
+      CON: 'wetness at the thought of being filled — the character is alarmed at how the body keeps preparing without asking',
+      WIS: 'the compulsion feels like genuine desire most of the time — the character has stopped trusting any want',
+      DOM: 'refusal feels unnatural — and the character knows that feeling itself is wrong, but knowing doesn\'t help',
+      SUB: 'yielding is default now and the character realizes they don\'t know when that became true',
+      CHA: 'the fertility signaling is constant and the character keeps catching themselves doing it',
+      INT: 'the frame has inverted — the character is asking "why am I fighting this" before "should I be fighting this"',
+    },
+    3: {
+      CON: 'the ache is assumed to be real need — the character has stopped questioning it and is bothered by having stopped',
+      WIS: 'the idea that the compulsion is artificial feels paranoid — the character knows that\'s the effect talking but can\'t undo the knowing',
+      DOM: 'self-imposed limits don\'t hold — the character notices each time a limit fails to engage and feels something missing',
+      SUB: 'receptivity is the resting state and the character is faintly aware this is new',
+      CHA: 'the waiting-between-encounters feeling is new and uncomfortable — the character can\'t quite explain it to themselves',
+      INT: 'reasoning responds to the ache — the character can see the bias and can\'t stop it',
+    },
+    2: {
+      CON: 'being empty feels wrong like being cold feels wrong — the character is aware that this is a recent development',
+      WIS: '"my need" and "the compulsion" are the same category now — the character notices the merge but can\'t reverse it',
+      DOM: 'refusing feels selfish and irrational, and the character knows that feeling is the effect — and it\'s also their feeling',
+      SUB: 'yielding isn\'t a choice and the character can\'t remember when they last chose',
+      CHA: 'seeking is automatic and the character is monitoring it like a witness, not a participant',
+      INT: 'intelligence is a service now and the character is faintly aware of being used by their own mind',
+    },
+    1: {
+      CON: 'the ache IS identity — the character knows this should feel like loss and finds that knowing isn\'t enough to make it feel that way',
+      WIS: 'every instinct points one direction — the character can describe alternatives but can\'t generate them anymore',
+      DOM: 'refusal doesn\'t form as a concept — the character notices that it doesn\'t form, and the noticing doesn\'t change anything',
+      SUB: 'receptivity is total and pre-emptive — the character watches their body anticipate and doesn\'t interrupt',
+      CHA: 'no self-concept independent of being bred — the character knows they used to have one but can\'t quite recall',
+      INT: 'intelligence serves the need — the character can see this happening and can\'t unhook from it',
+    },
+    0: {
+      CON: 'no concept of empty — the first-time arc has terminated past where memory of the original baseline still holds',
+      WIS: 'no compulsion recognized as separate — the character has crossed the point where "this is the pill" is even a thought',
+      DOM: 'the idea of reproductive autonomy doesn\'t parse — first-time has reached its terminal where the alternative is gone',
+      SUB: 'openness is the substrate, not a choice — the character isn\'t doing anything anymore, they ARE this',
+      CHA: 'the body exists to attract, receive, carry — and the character no longer experiences this as new',
+      INT: 'no reasoning about it — first-time has terminated at this stat band',
+    },
+  },
   // ── BIMBO RESISTANCE BEATS ──────────────────────────────────────────────────
   // The world gets simpler. Complex thoughts feel heavy. Attention feels warm.
   // Not stupidity — a shift in what matters. Depth drains. Sparkle fills.
@@ -9694,7 +9792,18 @@ function _buildResistanceBeats(state) {
     // Motherhood mode — breeder beats suppressed once motherhood begins (post-conception turn).
     // On conception turn itself, beats still present so the breeder climax narrates correctly.
     if (eff === 'breeder' && _inMotherhood) continue;
-    var beats = _EFFECT_RESISTANCE_BEATS[eff];
+    // v7.7.41 — first-time arc selector for breeder. During the discovery arc
+    // (breeder active, _breeder_first_climb_done false), pick from the
+    // breeder_first_time table — same band/stat structure, but cognitive
+    // framing is QUESTIONING (composure against an unfamiliar pull) rather
+    // than KNOWN-THREAT (resisting a recognized force). After the first
+    // creampie-orgasm flips the climb-done flag, this picker switches back
+    // to the familiar `breeder` table.
+    var beatsKey = eff;
+    if (eff === 'breeder' && !state._breeder_first_climb_done) {
+      beatsKey = 'breeder_first_time';
+    }
+    var beats = _EFFECT_RESISTANCE_BEATS[beatsKey];
     if (!beats) continue;
 
     var resist = resistance[eff];
@@ -14185,19 +14294,43 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
 
   // ── Masculinity register — character-attitude framing, surfaced as <reaction-register> in tx ──
   // (computed up here in v7.7.7 so it can be embedded inside <tx>; also stored on state for voice-block merge)
+  // v7.7.41 — first_time variants per band. During the first-time arc (breeder
+  // active, _breeder_first_climb_done not set), the register reframes from
+  // "rage vs cracking vs split vs dissolving vs welcoming" (which assume the
+  // character knows what's happening) to "confused composure" variants — the
+  // resistance comes from not having a frame for what's pulling on them, not
+  // from rejecting a known threat. Same band mapping, different cognitive frame.
   const _rawMasc = parseInt((state || {}).masculinity ?? 50, 10);
   const _wiBand = _masculinityBand(_rawMasc);
+  const _isBreederFirstTime = ((state || {}).active_effects || []).indexOf('breeder') >= 0
+                            && !(state || {})._breeder_first_climb_done;
   var _wiRegister;
-  if (_wiBand >= 9) {
-    _wiRegister = 'This character fights every change with everything they have — horror, denial, rage. But they fight it the way THEY fight, in their own words and reactions.';
-  } else if (_wiBand >= 7) {
-    _wiRegister = 'This character resists but the resistance is cracking — disbelief, denial that gets harder to maintain, the body winning arguments the mind is still making. Express that resistance through their personality, not through generic panic.';
-  } else if (_wiBand >= 5) {
-    _wiRegister = 'This character is split — the changes feel wrong and strangely familiar at the same time. Neither fighting nor accepting, fracturing. Show that confusion through how they specifically process contradiction.';
-  } else if (_wiBand >= 3) {
-    _wiRegister = 'This character\'s resistance is dissolving into reluctant relief — the changes feel wrong but part of them isn\'t fighting. Show that surrender through their own vocabulary and tells.';
+  if (_isBreederFirstTime) {
+    // First-time arc — questioning composure variants
+    if (_wiBand >= 9) {
+      _wiRegister = 'This character is feeling something they don\'t understand and is trying to compose against it. The resistance comes from not having a name for what\'s happening yet, not from rejecting a known threat. Render the fight as confused composure — they don\'t know what they\'re fighting, only that the body is doing something unfamiliar and they want it to stop until they can name it.';
+    } else if (_wiBand >= 7) {
+      _wiRegister = 'Composure is trying to hold but the character can\'t tell if what they\'re holding against is real. There\'s no precedent for the pull and the questioning itself is depleting. The cracking shows as disorientation more than denial — they\'re losing ground without knowing exactly what they\'re losing it to.';
+    } else if (_wiBand >= 5) {
+      _wiRegister = 'The character is split between trusting what they\'re feeling and not believing it could be real. Composure and curiosity are running in parallel without either winning. Show the fracturing as confusion compounded — they\'re reaching for explanations that don\'t fit, watching themselves react in ways they can\'t source.';
+    } else if (_wiBand >= 3) {
+      _wiRegister = 'The resistance is failing not because the character has surrendered but because they can\'t sustain composing against a force they don\'t recognize. The give comes from confusion, not consent. Render it as exhausted yielding — they\'ve stopped fighting because the fight stopped making sense, not because they chose to stop.';
+    } else {
+      _wiRegister = 'The body is doing something the character has stopped trying to interpret. They don\'t have the cognitive frame for what\'s happening, only the felt sense of it. Render the surrender as cognitive blank rather than acceptance — they\'re not welcoming it, they\'re just no longer constructing an opposition to it.';
+    }
   } else {
-    _wiRegister = 'This character welcomes this — the body is finally matching what was already inside. Write the relief and intensity through their specific way of experiencing joy and completion.';
+    // Familiar / non-breeder — original known-threat register
+    if (_wiBand >= 9) {
+      _wiRegister = 'This character fights every change with everything they have — horror, denial, rage. But they fight it the way THEY fight, in their own words and reactions.';
+    } else if (_wiBand >= 7) {
+      _wiRegister = 'This character resists but the resistance is cracking — disbelief, denial that gets harder to maintain, the body winning arguments the mind is still making. Express that resistance through their personality, not through generic panic.';
+    } else if (_wiBand >= 5) {
+      _wiRegister = 'This character is split — the changes feel wrong and strangely familiar at the same time. Neither fighting nor accepting, fracturing. Show that confusion through how they specifically process contradiction.';
+    } else if (_wiBand >= 3) {
+      _wiRegister = 'This character\'s resistance is dissolving into reluctant relief — the changes feel wrong but part of them isn\'t fighting. Show that surrender through their own vocabulary and tells.';
+    } else {
+      _wiRegister = 'This character welcomes this — the body is finally matching what was already inside. Write the relief and intensity through their specific way of experiencing joy and completion.';
+    }
   }
   if (state) state._tx_register = _wiRegister;
 
