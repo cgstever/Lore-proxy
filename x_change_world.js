@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.39",
+  "version": "7.7.40",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7489,6 +7489,9 @@ function registerBreederLoop(engine, opts) {
     if (!_hasBreederOrSurrogate(state)) return;
     if (!_hasPregnancyEligiblePill(state)) return;
     if (_isMotherhoodMode(state, engine)) return;
+    // v7.7.40 — capture whether THIS is the first climb BEFORE flipping the flag.
+    // The addiction-onset register only opens on the transition false → true.
+    var _wasFirstClimb = !state._breeder_first_climb_done;
     state._breeder_orgasm_count = (state._breeder_orgasm_count || 0) + 1;
     // v7.7.30 — first arousal-climb closure marks the discovery arc as complete.
     // Subsequent climbs use 'familiar' framing in the body-pull narration.
@@ -7498,6 +7501,14 @@ function registerBreederLoop(engine, opts) {
     // while > 0, the model gets the cervix-aftershock / coming-back-marked
     // fragments alongside whatever else is active.
     state._breeder_postorgasm_window = 2;
+    // v7.7.40 — addiction-onset register opens for 3 turns after the FIRST
+    // forced breeder-orgasm closes the discovery arc. Distinct from post-orgasm
+    // (body aftermath); this register is the cognitive realization that the
+    // body learned what it was built for and now wants it again. Only fires
+    // on the once-per-character transition false → true.
+    if (_wasFirstClimb) {
+      state._breeder_addiction_onset_window = 3;
+    }
     engine.setFlag('breeder_orgasm_forced_this_turn', { ttl:1 });
     engine.setFlag('character_orgasm_this_turn', { ttl:1 });
   });
@@ -7858,6 +7869,9 @@ const REBUILD_OWNED_FIELDS = [
   // on creampie. Post-orgasm window opens for 2 turns after the forced breeder
   // orgasm so the over-the-top register fires across the immediate + settling turns.
   '_breeder_compulsion', '_breeder_postorgasm_window', '_breeder_postorgasm_seen',
+  // v7.7.40 — addiction-onset register window. Opens to 3 on the first
+  // forced breeder-orgasm only; decrements each turn in the body-pull pass.
+  '_breeder_addiction_onset_window', '_breeder_addiction_seen',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -8133,9 +8147,10 @@ const _BREEDER_BODY_PULL = {
       "the realization arriving in stages: this is wrong, this isn't me, something was done to me — the body is asking for something the character did not agree to want"
     ],
     peak: [
-      "the pull has overtaken everything and the character has just put it together — someone did this, this is a pill, the body is demanding insemination and the demand isn't theirs",
-      "an emptiness loud enough to drown out the betrayal — knowing what was done doesn't make the body stop asking",
-      "the character is screaming internally about violation while the body is signaling availability with every breath — two completely separate selves operating in parallel"
+      "the pull has overtaken everything and the character has just put it together — someone did this, this is a pill, and the body is doing what it was made to do whether the character agrees or not",
+      "the body running at full edge — clenching, hot, empty, the explanation now obvious and the wrongness of it loud at the same time",
+      "two selves running in parallel — the character screaming internally about violation while the body holds its open posture without permission",
+      "edge-state, the realization fully landed: this is what the pill does, this is what the body wants, and knowing doesn't shut any of it off"
     ]
   },
   discovery: {
@@ -8154,9 +8169,10 @@ const _BREEDER_BODY_PULL = {
       "realization landing in real time: this is what the pill does, it's making the body want to be filled"
     ],
     peak: [
-      "the pull has stopped being discoverable and started being everything — the body is demanding insemination and the demand is no longer something the mind can step around",
-      "an emptiness the character would have called pain if the pull weren't also pleasure — the new body's primary signal at full volume",
-      "thoughts narrowing to a single channel — be filled, be filled, be filled — and the character is realizing they're going to say it out loud"
+      "the body running at full edge state — clenching, hot, empty, every signal turned up loud, composure straining at the limit but not yet broken",
+      "an emptiness the character would have called pain if the pull weren't also pleasure — the new body's primary signal at full volume, mid-act",
+      "thoughts narrowing as the body claims the foreground — the character can still hold the line, but everything below the neck has its own agenda now",
+      "the pull is everything and the character knows it — pelvic heat, slick, clenching, open posture — composure is a choice they're making against a body that has stopped agreeing with it"
     ]
   },
   familiar: {
@@ -8171,8 +8187,9 @@ const _BREEDER_BODY_PULL = {
       "the inside aching the way it always aches before being filled — familiar territory"
     ],
     peak: [
-      "demand at full volume, body in the position it always ends up in, the words a beat away from coming out",
-      "edge-state pull — empty, hungry, and nothing else is going to register until that gets fixed"
+      "edge-state pull at full volume — the known empty, the known hungry, body in its preferred posture, every signal saying yes",
+      "the body holding its known edge — slick, clenching, hot, open. The character has been here before and knows what comes next",
+      "operational edge — the body is doing the full familiar program and the character is along for the ride more than driving it"
     ]
   }
 };
@@ -8225,7 +8242,28 @@ function _pickBreederBodyPull(state) {
   }
   var arousal = parseInt(state.arousal || 0, 10);
   if (arousal <= 0) return null;
-  var tier = (arousal < 30) ? 'onset' : (arousal < 50) ? 'building' : 'peak';
+
+  var firstTime = !state._breeder_first_climb_done;
+
+  // v7.7.40 — first-time arc has an arousal-20 floor (body hasn't learned the
+  // signal yet — character feels NORMAL through the early climb). Familiar arc
+  // responds from arousal 1+ since the body recognizes the cycle.
+  if (firstTime && arousal < 20) return null;
+
+  // v7.7.40 — first-time tiers re-anchored to align with the orgasm-zone
+  // threshold (~80). Onset is slow-show, building is explicit-but-contained,
+  // peak is edge-state where the body is screaming the demand and composure
+  // is at its limit — but PEAK IS NOT BEGGING. Begging only fires from the
+  // compulsion register (gated on a failed composure roll, not arousal).
+  //   first-time: onset 20-49 / building 50-74 / peak 75+
+  //   familiar:   onset 1-29  / building 30-49 / peak 50+   (body knows cycle)
+  var tier;
+  if (firstTime) {
+    tier = (arousal < 50) ? 'onset' : (arousal < 75) ? 'building' : 'peak';
+  } else {
+    tier = (arousal < 30) ? 'onset' : (arousal < 50) ? 'building' : 'peak';
+  }
+
   var arc;
   if (state._breeder_first_climb_done) {
     arc = 'familiar';
@@ -8244,6 +8282,49 @@ function _pickBreederBodyPull(state) {
   while (seen.length > 3) seen.shift();
   state._breeder_pull_seen = seen;
   return { arc: arc, tier: tier, text: pick };
+}
+
+// v7.7.40 — BREEDER ADDICTION-ONSET REGISTER.
+// Fires for 3 turns AFTER the first forced breeder-orgasm closes the first-time
+// arc (`_breeder_first_climb_done` flips false → true). Distinct from the
+// post-orgasm register (which is immediate body aftermath of any breeder
+// orgasm). This register is the cognitive recognition: the body learned what
+// it was built for and the want is now known and permanent. Source phrases:
+// Devon's "addiction" register + Liya's "still craving" mid-arc post-climb.
+const _BREEDER_ADDICTION_ONSET = {
+  immediate: [
+    "the body just learned what it was built for and it knows — the want is new and already permanent",
+    "post-cycle the body is quiet but the mind has the missing piece now — every previous confusion just got named",
+    "the rewire landed: the body has been taught its preferred state and the lesson took, on a level the character can feel without being able to argue with",
+    "first time post-cycle the character is realizing the wanting hasn't gone away, it has rearranged into anticipation",
+    "the new memory is too vivid to put down — what the body did, what got delivered, what to expect again"
+  ],
+  settling: [
+    "the new gravity has settled — the body holds the cycle as known, expected, wanted, on the inside of the character's experience now",
+    "the missing word the character was reaching for during the climb has surfaced, and it's a word about the body wanting again",
+    "the after-feeling is quieter than the during-feeling but the after-feeling is the part that won't go away",
+    "this is what the body is for now — the character knows it and the knowing isn't going anywhere"
+  ]
+};
+
+function _pickBreederAddictionOnset(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0) return null;
+  var window = parseInt(state._breeder_addiction_onset_window || 0, 10);
+  if (window <= 0) return null;
+  // window=3 → immediate (turn right after climb); window=2,1 → settling
+  var tier = (window >= 3) ? 'immediate' : 'settling';
+  var pool = _BREEDER_ADDICTION_ONSET[tier] || [];
+  if (!pool.length) return null;
+  var seen = Array.isArray(state._breeder_addiction_seen) ? state._breeder_addiction_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_addiction_seen = seen;
+  return { tier: tier, text: pick };
 }
 
 
@@ -15092,6 +15173,21 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
       if (state._breeder_postorgasm_window <= 0) {
         delete state._breeder_postorgasm_window;
         delete state._breeder_postorgasm_seen;
+      }
+    }
+    // v7.7.40 — addiction-onset register (3-turn window after first forced
+    // breeder-orgasm closes the discovery arc). Distinct from post-orgasm —
+    // post-orgasm is body aftermath, addiction-onset is the cognitive
+    // realization that the body now KNOWS what it wants. Once-per-character.
+    var _addiction = _pickBreederAddictionOnset(state);
+    if (_addiction) {
+      stateContent.push('<addiction-onset tier="' + _addiction.tier + '">' + _addiction.text + '</addiction-onset>');
+    }
+    if (state && state._breeder_addiction_onset_window > 0) {
+      state._breeder_addiction_onset_window = state._breeder_addiction_onset_window - 1;
+      if (state._breeder_addiction_onset_window <= 0) {
+        delete state._breeder_addiction_onset_window;
+        delete state._breeder_addiction_seen;
       }
     }
     // v7.7.34 — also surface compulsion state when set so the model has explicit
