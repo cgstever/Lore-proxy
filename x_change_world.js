@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.45",
+  "version": "7.7.46",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -15333,19 +15333,15 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     if (eff === 'breeder' && _inMotherhood) continue;
     var mech = em[eff] || {};
     if (mech.injection_rule) {
-      // v7.7.45 — honor min_rule_arousal gate. Was being ignored: breeder's
-      // "RULE: character cannot orgasm this turn. Do not write climax,
-      // release, or orgasm of any kind." was firing on every breeder-active
-      // turn regardless of arousal. At arousal 6, the rule has nothing to
-      // restrain (character isn't near climax), but the model reads it as
-      // orgasm pressure and fills in empty-ache / clenching narration to
-      // justify the suppression. min_flavor_arousal (line 14782) was being
-      // honored for fragment selection but min_rule_arousal was orphaned.
-      var _minRuleArousal = parseInt(mech.min_rule_arousal || 0, 10);
-      if (_minRuleArousal > 0) {
-        var _curArousal = parseFloat(state.arousal || 0);
-        if (_curArousal < _minRuleArousal) continue;
-      }
+      // v7.7.46 — REVERTED v7.7.45's min_rule_arousal gate. The rule needs to
+      // fire every turn the effect is active so the model honors the
+      // mechanic (breeder: no orgasm except via creampie; submissive: yield
+      // = reward; compliant: carry out instructions). Gating the rule by
+      // arousal was preventing it from doing its mechanical job. The
+      // "model rendering body-pull at low arousal" issue is a separate
+      // concern — the rule needs to stay surgical to the mechanic and not
+      // shape prose direction, but that's a wording/architecture problem,
+      // not a firing-frequency problem.
       var isOrgasmGated = !!orgasmGates[eff];
       if (isOrgasmGated) {
         _hardRuleTexts.push(mech.injection_rule);
