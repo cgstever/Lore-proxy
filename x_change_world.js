@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.43",
+  "version": "7.7.44",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7275,7 +7275,22 @@ function registerClimaxSession(engine, opts) {
     state.session_orgasm_count = (state.session_orgasm_count || 0) + 1;
     state.total_orgasm_count = (state.total_orgasm_count || 0) + 1;
   });
-  engine.registerHandler('resetArousalPostOrgasm', state => { state.arousal = 15; });
+  engine.registerHandler('resetArousalPostOrgasm', state => {
+    // v7.7.44 — drop to floor (not hardcoded 15). NOTE: this handler writes
+    // to the SHADOW state and `arousal` is not in REBUILD_OWNED_FIELDS, so
+    // this write never copies back to real state — the legacy path at line
+    // ~13334 is the authoritative reset. Keep this fix anyway so the shadow's
+    // debug surface matches the real outcome, and so any future copy-back of
+    // arousal doesn't introduce a regression. Resolves floor via the same
+    // getArousalFloor() the HUD and legacy reset use.
+    try {
+      if (typeof getArousalFloor === 'function' && _cachedScrubConfig) {
+        state.arousal = getArousalFloor(state, _cachedScrubConfig);
+        return;
+      }
+    } catch (_) { /* fall through */ }
+    state.arousal = 0;
+  });
   engine.registerHandler('engageSession', state => { if (Session.getState() === 'idle') Session.transition('engaged', 'sex_engagement_detected'); });
   engine.registerHandler('arousalGateOrgasmCheck', state => {
     const a = state.arousal || 0;
@@ -13332,12 +13347,22 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
   // Post-orgasm effects
   const orgasmRules = (rs.orgasm_rules || {}).gates || {};
   if (orgasmThisTurn) {
-    const postOrgDrop = parseFloat(rs.arousal_system?.post_orgasm_drop ?? 15);
+    // v7.7.44 — post-orgasm reset now targets the character's actual computed
+    // arousal floor instead of a hardcoded 15. Old behavior: read
+    // `arousal_system.post_orgasm_drop` (= 15) and pass to setArousal, which
+    // would clamp up if the real floor was higher (so a stage-2 character
+    // landed at 20, not 15) but never DOWN — so a stage-0 character with
+    // floor=0 still landed at 15 after orgasm even though her body's resting
+    // baseline was 0. That mismatch between "Floor 0" on the status window
+    // and "arousal=15 after orgasm" was the bug. Now: setArousal(0) and let
+    // setArousal's own floor clamp drop it to wherever the floor actually
+    // sits. Two in the Chamber path is left alone — its tier-3/full mechanic
+    // is a separate design choice with explicit 15/0 alternation.
     for (const [effName, gate] of Object.entries(orgasmRules)) {
       if (!effects.includes(effName)) continue;
       const arousalReset = gate.arousal_reset_on;
       if (arousalReset && events[arousalReset]) {
-        setArousal(state, postOrgDrop, rs);
+        setArousal(state, 0.0, rs);
         const baseDc = parseInt(rs.arousal_system?.level_gate_dc || 10, 10);
         state._arousal_gate_dc = baseDc;
         state._arousal_gate_fail_count = 0;
@@ -13345,7 +13370,7 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
         state._gate_pass_streak = 0;
         state._gate_pass_streak_at = -1;
         const floor = getArousalFloor(state, rs);
-        notes.push(effName + ':insemination orgasm — arousal→' + postOrgDrop + ' (floor=' + floor + ') DC=' + baseDc);
+        notes.push(effName + ':insemination orgasm — arousal→floor=' + floor + ' DC=' + baseDc);
         state._orgasm_dc_reset_done = true;
         state._post_orgasm_effects = state._post_orgasm_effects || {};
         state._post_orgasm_effects[effName] = true;
@@ -13366,9 +13391,9 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
           notes.push('orgasm (Two in Chamber) — full reset');
         }
       } else {
-        setArousal(state, postOrgDrop, rs);
+        setArousal(state, 0.0, rs);
         const floor = getArousalFloor(state, rs);
-        notes.push('orgasm — arousal→' + postOrgDrop + ' (floor=' + floor + ') DC=' + baseDc);
+        notes.push('orgasm — arousal→floor=' + floor + ' DC=' + baseDc);
       }
       state._arousal_gate_dc = baseDc;
       state._arousal_gate_fail_count = 0;
@@ -13436,10 +13461,11 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
       if ((effects.includes(linkedEff) || hasStage) && events[linkedEvent]) {
         const gate = orgasmRules[linkedEff] || {};
         if (gate.arousal_reset_on && events[gate.arousal_reset_on]) {
-          const _linkedDrop = parseFloat(rs.arousal_system?.post_orgasm_drop ?? 15);
-          setArousal(state, _linkedDrop, rs);
+          // v7.7.44 — target floor instead of post_orgasm_drop (see comment
+          // at line ~13334 for rationale). setArousal clamps 0 → floor.
+          setArousal(state, 0.0, rs);
           const floor = getArousalFloor(state, rs);
-          notes.push(linkedEff + ':orgasm+arousal→' + _linkedDrop + ' (floor=' + floor + ')');
+          notes.push(linkedEff + ':orgasm+arousal→floor=' + floor);
         }
         if (!isLocked(state, effName)) {
           const result = runRoll(state, effName, notes, rs);
