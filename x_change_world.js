@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.48",
+  "version": "7.7.49",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -15503,6 +15503,24 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     stateLines.push('</state>');
   }
 
+  // v7.7.49 — emit hard rules as engine-data XML in the system prompt
+  // instead of as a markdown bullet list at `after_last_user` position.
+  // Old placement was the strongest prose-shaping slot in the prompt
+  // (last thing model reads before generating); model treated rule text
+  // as prose direction and rendered the implied subtext (e.g. breeder's
+  // "cannot orgasm / do not write climax" → empty-ache / clenching /
+  // edge-state body narration at low arousal). Wrapping in <engine-rules>
+  // alongside <state>/<voice>/<scene> signals "engine constraint, not
+  // prose direction" via the same XML structure as other engine data.
+  // Rule TEXT unchanged. Firing behavior unchanged. Just relocated.
+  if (_hardRuleTexts.length) {
+    stateLines.push('<engine-rules>');
+    for (var _hr = 0; _hr < _hardRuleTexts.length; _hr++) {
+      stateLines.push(_stripEffectNames(_hardRuleTexts[_hr]));
+    }
+    stateLines.push('</engine-rules>');
+  }
+
   // ── <transformation> block (TX only) ──
   var txLines = [];
   var pillDesc = state._pill_descriptor_this_turn || null;
@@ -17588,12 +17606,12 @@ function processTurn({systemText, messages, state, personaState, config, charNam
 // isn't relevant during the change itself.
 function _buildRequiredBlock(state, rs, isPriorityTurn) {
   var parts = [];
-  var hardRules = state._hardRules || [];
-  if (!isPriorityTurn && hardRules.length) {
-    for (var h = 0; h < hardRules.length; h++) {
-      parts.push(_stripEffectNames('- ' + hardRules[h]));
-    }
-  }
+  // v7.7.49 — hard rules removed from this block. They now emit as
+  // <engine-rules> XML inside the system prompt (next to <state>) rather
+  // than as a markdown bullet list at `after_last_user` position.
+  // `after_last_user` is the strongest prose-shaping slot — model was
+  // reading rule text as immediate prose direction. Moving to engine-data
+  // alongside <state> signals "background constraint, not prose target."
   var _st = (rs && rs.scene_tracker) || {};
   if (_st.enabled !== false) {
     var _maxW = _st.max_field_words || 20;
