@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.42",
+  "version": "7.7.43",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6925,9 +6925,17 @@ function detectAntidote(text, engine) {
 // during sustained sex when the user message implied internal ejaculation by context.
 const CREAMPIE_PATTERNS = [
   /\bcreampie(?:s|d)?\b/i,
-  /\b(?:cum|come|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill|finish)\w*[\s\S]{0,60}\b(?:inside|into|in|womb|uterus|cervix|her\s+pussy|your\s+pussy)\b/i,
+  // v7.7.43 — REMOVED `fill` from this verb list. "Cock filling her pussy" is
+  // penetration, not a creampie, and was producing false positives that fired
+  // the whole orgasm + pregnancy cascade on teasing turns. The legitimate
+  // "filled her with cum" case is caught by pattern 4 below via the augmented
+  // `with cum/seed/load/jizz/spunk` suffix.
+  /\b(?:cum|come|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|finish)\w*[\s\S]{0,60}\b(?:inside|into|in|womb|uterus|cervix|her\s+pussy|your\s+pussy)\b/i,
   /\b(?:inside|into|womb|uterus|cervix)\b[\s\S]{0,60}\b(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)\w*\b/i,
-  /\b(?:came|cum|finish\w*|empt(?:y|ied|ying)|fill\w*|breed\w*|seed\w*)[\s\S]{0,15}\b(?:deep|hard|her|me|you|himself|herself)\b[\s\S]{0,30}\b(?:bare|raw|deep|inside|her\s+core|deep\s+inside|with(?:\s+a|\s+everything))/i,
+  // v7.7.43 — augmented group3 with `with\s+(?:cum|seed|load|jizz|spunk)` so
+  // "filled her with cum" / "fill her with seed" still catch (the legit
+  // creampie phrasings) now that pattern 2 no longer accepts bare `fill`.
+  /\b(?:came|cum|finish\w*|empt(?:y|ied|ying)|fill\w*|breed\w*|seed\w*)[\s\S]{0,15}\b(?:deep|hard|her|me|you|himself|herself)\b[\s\S]{0,30}\b(?:bare|raw|deep|inside|her\s+core|deep\s+inside|with(?:\s+a|\s+everything|\s+(?:cum|seed|load|jizz|spunk)))/i,
 ];
 const MALE_ORGASM_EXTERNAL_PATTERNS = [
   /\bpull(?:s|ed)?\s+out\b[\s\S]{0,40}\b(?:cum|came|finish|climax)\w*/i,
