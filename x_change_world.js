@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.41",
+  "version": "7.7.42",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7872,6 +7872,9 @@ const REBUILD_OWNED_FIELDS = [
   // v7.7.40 — addiction-onset register window. Opens to 3 on the first
   // forced breeder-orgasm only; decrements each turn in the body-pull pass.
   '_breeder_addiction_onset_window', '_breeder_addiction_seen',
+  // v7.7.42 — climax + begging register rotation guards (last-3 phrase
+  // history so the model doesn't see the same scaffold back-to-back).
+  '_breeder_climax_seen', '_breeder_begging_seen',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -8324,6 +8327,112 @@ function _pickBreederAddictionOnset(state) {
   seen.push(pick);
   while (seen.length > 3) seen.shift();
   state._breeder_addiction_seen = seen;
+  return { tier: tier, text: pick };
+}
+
+// v7.7.42 — BREEDER CLIMAX REGISTER.
+// Fires ONLY on the EXACT turn `forceBreederOrgasm` runs (detected via
+// `_breeder_postorgasm_window === 2`, the just-set maximum value). Distinct
+// from the post-orgasm aftermath register: this describes the CONVULSION
+// event itself, not the body settling. Tier gated by `_breeder_orgasm_count`
+// to avoid same-flavor repeat across cycles:
+//   first       — count = 1 (the inflection turn, first-ever forced orgasm)
+//   early       — count = 2 or 3 (body has learned, intensity not domesticated)
+//   established — count >= 4 (cycle is routine in shape, never in feel)
+// Phrasing intentionally abstract — describes the SHAPE of the event
+// (involuntary, full-spectrum convulsion) without scripting specific verbs.
+// Model fills vocabulary from character voice. Rotation guard prevents
+// back-to-back repeats within tier.
+const _BREEDER_CLIMAX_REGISTER = {
+  first: [
+    "the body has just had the climax it was built for — first-time impact, involuntary, the convulsion teaching the body what it now wants. Render in character voice; do not quote this scaffold verbatim",
+    "first-cycle climax fires through the character end-to-end — every muscle firing without their input; the body is doing the work of teaching the mind what was always going to happen here",
+    "the body just received the trigger it was waiting for and the response is total — observable from outside as something happening TO the character, not something they are doing",
+    "the climax exceeds the character's reference for what climax is — first-time cycle, the body has just demonstrated what it does, and the demonstration is irreversible",
+    "first time the character experiences the breeder-orgasm convulsion — it is large, it is involuntary, and it leaves them in a state they have not yet had a word for"
+  ],
+  early: [
+    "the body recognizes the climax and convulses through it — early-arc, the shape is familiar but the intensity has not yet been domesticated. Render in character voice",
+    "the character expected it now, but expecting didn't soften the receiving; the convulsion still takes them apart end-to-end",
+    "the climax fires through known channels — body has the practice but the wave is still larger than the character's composure can fit around",
+    "early-cycle convulsion runs the same program with less surprise — the character knows what's coming and the knowing doesn't blunt it",
+    "the body executes the climax it has done before but the doing has not yet become routine — convulsion full-spectrum, recovery still ahead"
+  ],
+  established: [
+    "the climax runs as expected — known shape, known intensity, body executing what it now reliably does. Render in character voice without flattening the event into mere routine",
+    "established cycle — convulsion is practiced, character is along for the known ride; the body's preferred climax pattern executes itself",
+    "the orgasm fires on schedule and the body executes its known program — convulsion routine in shape if not in feel",
+    "practiced climax — the body has the move down and runs it; the character is no longer surprised by their own response",
+    "established convulsion — the body cycles through what it now does well, the character recognizing both the shape and their own position inside it"
+  ]
+};
+
+function _pickBreederClimax(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0 && fx.indexOf('surrogate') < 0) return null;
+  // Detect "this is the forced-orgasm turn" by checking _breeder_postorgasm_window
+  // is at its just-set maximum (2). forceBreederOrgasm sets it; the body-pull
+  // pass picks the climax fragment BEFORE the window is decremented, so this
+  // check is reliable for the orgasm turn only.
+  if (parseInt(state._breeder_postorgasm_window || 0, 10) < 2) return null;
+  var count = parseInt(state._breeder_orgasm_count || 0, 10);
+  var tier;
+  if (count <= 1) tier = 'first';
+  else if (count <= 3) tier = 'early';
+  else tier = 'established';
+  var pool = _BREEDER_CLIMAX_REGISTER[tier] || [];
+  if (!pool.length) return null;
+  var seen = Array.isArray(state._breeder_climax_seen) ? state._breeder_climax_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_climax_seen = seen;
+  return { tier: tier, text: pick };
+}
+
+// v7.7.42 — BREEDER BEGGING REGISTER.
+// Augments the existing `<compulsion>` element with a SHORT reference for
+// the register of vocabulary the model should reach for. Abstract framing —
+// does NOT quote specific phrases ("FILL ME UP!") because verbatim scripting
+// is where pastiche risk lives. Two tiers gated by `_breeder_orgasm_count`:
+//   first_time — count = 0 (character has never come from breeder yet;
+//                vocabulary feels alien, character hears themselves and
+//                doesn't fully recognize the voice)
+//   familiar   — count >= 1 (post-first-orgasm; established demand register)
+// Rotation guard via `_breeder_begging_seen`.
+const _BREEDER_BEGGING_VOCAB = {
+  first_time: [
+    "first-time begging — vocabulary is anatomically direct, breeding-specific, possessive of the partner's body. The character hears themselves reaching for words they would not have used yesterday and doesn't fully recognize the voice making them. Render in character voice; do not quote this scaffold",
+    "the register is demand, not request — direct calls for filling, for breeding, for the partner not pulling out. First-time, the words come up from the body before the mind sanctions them, and the character notices the gap",
+    "begging vocabulary has shifted into breeding-anatomical territory — the character is using terms they would have called crude an hour ago, and the using of them is itself part of what's happening"
+  ],
+  familiar: [
+    "established demand register — the character knows what they sound like in this state and reaches for the calls they know work. The vocabulary is no longer alien to them, but the demand is no less urgent",
+    "familiar begging — directness, possessive language, breeding-specific terms — the character is in known territory and uses known language; render in their own voice",
+    "the demand vocabulary the character has already learned — practiced calls for the specific filling the body wants, no longer hearing themselves as a stranger"
+  ]
+};
+
+function _pickBreederBegging(state) {
+  if (!state || typeof state !== 'object') return null;
+  var fx = state.active_effects || [];
+  if (fx.indexOf('breeder') < 0 && fx.indexOf('surrogate') < 0) return null;
+  // Only fires when compulsion is engaged (begging state active)
+  if (state._breeder_compulsion !== 'creampie_required') return null;
+  var count = parseInt(state._breeder_orgasm_count || 0, 10);
+  var tier = (count <= 0) ? 'first_time' : 'familiar';
+  var pool = _BREEDER_BEGGING_VOCAB[tier] || [];
+  if (!pool.length) return null;
+  var seen = Array.isArray(state._breeder_begging_seen) ? state._breeder_begging_seen : [];
+  var fresh = pool.filter(function(p) { return seen.indexOf(p) < 0; });
+  if (!fresh.length) { fresh = pool.slice(); seen = []; }
+  var pick = fresh[Math.floor(Math.random() * fresh.length)];
+  seen.push(pick);
+  while (seen.length > 3) seen.shift();
+  state._breeder_begging_seen = seen;
   return { tier: tier, text: pick };
 }
 
@@ -15294,6 +15403,14 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     if (_breederPull) {
       stateContent.push('<body-pull arc="' + _breederPull.arc + '" tier="' + _breederPull.tier + '">' + _breederPull.text + '</body-pull>');
     }
+    // v7.7.42 — climax register fires on the EXACT forced-orgasm turn (detected
+    // via _breeder_postorgasm_window === 2, the just-set max). Must run BEFORE
+    // the post-orgasm window decrement below. Tiered by _breeder_orgasm_count
+    // so first / early / established cycles read differently.
+    var _climax = _pickBreederClimax(state);
+    if (_climax) {
+      stateContent.push('<climax-register tier="' + _climax.tier + '">' + _climax.text + '</climax-register>');
+    }
     // v7.7.34 — post-orgasm over-the-top register (1-2 turns after creampie-orgasm).
     // Decrements the window AFTER picking so the immediate-tier fires on the
     // creampie turn itself, settling-tier on the next turn, then off.
@@ -15325,8 +15442,15 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     }
     // v7.7.34 — also surface compulsion state when set so the model has explicit
     // framing for the begging arc instead of inferring from arousal alone.
+    // v7.7.42 — accompanied by a tiered begging-register reference (first_time
+    // vs familiar) that describes the SHAPE of the vocabulary the model should
+    // reach for without quoting specific phrases. Rotation-guarded.
     if (state && state._breeder_compulsion === 'creampie_required') {
       stateContent.push('<compulsion>The character has failed the composure check and is in a begging state — body and voice signaling desperately for a vaginal creampie. This is not flirtation; it\'s the breeder mechanic at full compulsion. The state persists until a same-turn vaginal creampie resets it. Render in character voice — the begging takes the shape of THEIR personality, not a generic plea.</compulsion>');
+      var _begging = _pickBreederBegging(state);
+      if (_begging) {
+        stateContent.push('<begging-register tier="' + _begging.tier + '">' + _begging.text + '</begging-register>');
+      }
     }
   }
   if (stateContent.length || _resistBeats.length) {
