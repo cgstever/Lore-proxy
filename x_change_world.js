@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.49",
+  "version": "7.7.50",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -2494,7 +2494,7 @@ const LORE_DATA =
     "creampie_vaginal": {
       "patterns": [
         "\\bcreampie(?:s|d)?\\b",
-        "(?:cum|come|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill|finish).{0,60}(?:inside|into|in\\b|womb|uterus|cervix|her pussy|your pussy)",
+        "(?:cum|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill|finish).{0,60}(?:inside|into|in\\b|womb|uterus|cervix|her pussy|your pussy)",
         "(?:inside|into|womb|uterus|cervix).{0,60}(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)",
         "(?<!will |would |can |could |should |might |must |gonna |going to |want to |wants to |wanted to |plan to |plans to |planning to |try to |tries to |trying to |need to |needs to |ready to |about to |hope to |hopes to |hoping to |love to |loves to |like to |likes to |let me |let's |let us |to )breed(?:s|ing)? (?:me|you|her)"
       ],
@@ -6930,7 +6930,11 @@ const CREAMPIE_PATTERNS = [
   // the whole orgasm + pregnancy cascade on teasing turns. The legitimate
   // "filled her with cum" case is caught by pattern 4 below via the augmented
   // `with cum/seed/load/jizz/spunk` suffix.
-  /\b(?:cum|come|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|finish)\w*[\s\S]{0,60}\b(?:inside|into|in|womb|uterus|cervix|her\s+pussy|your\s+pussy)\b/i,
+  // v7.7.50 — REMOVED `come` from verb alternation. With `\w*` suffix it
+  // matched `comes/coming` which is overwhelmingly third-person English
+  // for arrive/touch/occur ("comes into contact with her cervix" is
+  // penetration prose, not climax). `cum/came` remain.
+  /\b(?:cum|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|finish)\w*[\s\S]{0,60}\b(?:inside|into|in|womb|uterus|cervix|her\s+pussy|your\s+pussy)\b/i,
   /\b(?:inside|into|womb|uterus|cervix)\b[\s\S]{0,60}\b(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)\w*\b/i,
   // v7.7.43 — augmented group3 with `with\s+(?:cum|seed|load|jizz|spunk)` so
   // "filled her with cum" / "fill her with seed" still catch (the legit
