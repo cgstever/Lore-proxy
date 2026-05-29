@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.7.50",
+  "version": "7.8.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -14146,6 +14146,90 @@ const _BREAST_TX_PHRASES = {
   ]
 };
 
+// ── REBIRTH TRANSFORMATION (v7.8.0) ─────────────────────────────────────────
+// Self-contained module. A transformative (gender-change) pill = a NEW body:
+// young (~20-25), whole/healed (illness cured, missing limbs regrown), with only
+// a faint passing resemblance to the former self. Wired with minimal hooks:
+//   (1) stash raw card text on state (where systemText is in scope, ~17350)
+//   (2) call _rebirthApply + splice _rebirthTxLines() inside buildTransformationGuidance
+//       (transformative path only), wrapped in try/catch — fails safe, never throws.
+var LIMB_REGROWTH_GUIDES = {
+  arm:    "Stages (reference — render in the character's voice, do not list): bone lengthening down from the shoulder stump, muscle sheathing it, the elbow forming and locking, the forearm extending, the wrist, the hand unfurling, the fingers splitting and lengthening, the nails hardening last. Sensation: deep bone-ache, feeling racing out to the new fingertips, the strange returned weight of an arm that wasn't there.",
+  leg:    "Stages (reference — render in the character's voice, do not list): the femur driving down from the stump, the knee forming and locking, the shin, the ankle, the foot building, the toes splitting free. Sensation: the floor pressing up against a sole that wasn't there, weight rebalancing, the ache of bearing down on new bone.",
+  hand:   "Stages (reference — render in the character's voice, do not list): the wrist completing, the palm spreading, the fingers extending and the knuckles forming, the nails hardening last. Sensation: grip returning, air between new fingers.",
+  foot:   "Stages (reference — render in the character's voice, do not list): the ankle completing, the arch and sole forming, the heel, the toes. Sensation: balance returning, the ground suddenly underfoot.",
+  eye:    "Stages (reference — render in the character's voice, do not list): the empty socket filling, the globe forming new and wet, the iris drawing in its color, the lid and lashes, then sight returning — light first, then blur, then focus. Sensation: pressure behind the socket, the flood of returning vision.",
+  finger: "Stages (reference — render in the character's voice, do not list): the digit budding from the knuckle, the joint forming, lengthening, the nail hardening last. Sensation: the small return of touch at a new tip."
+};
+var _REBIRTH_ILLNESS_RE = /\b(?:terminal|terminally ill|dying of|inoperable|incurable|fatal (?:illness|disease|diagnosis)|cancer|leukemia|tumou?r|wasting (?:disease|away)|chronically ill)\b/i;
+var _REBIRTH_LIMB_RE = /\b(?:amputee|amputated|missing (?:an?\s+|his\s+|her\s+|their\s+)?(arm|leg|hand|foot|eye|fingers?)|lost (?:an?\s+|his\s+|her\s+|their\s+)?(arm|leg|hand|foot|eye)|prosthetic (arm|leg|hand|foot|limb|eye)|one-(armed|legged|handed)|empty (?:eye\s+)?socket)\b/i;
+
+function _rebirthNormalizeLimb(raw) {
+  if (!raw) return null;
+  var w = String(raw).toLowerCase();
+  if (/finger/.test(w)) return 'finger';
+  if (/arm|armed/.test(w)) return 'arm';
+  if (/leg|legged/.test(w)) return 'leg';
+  if (/hand|handed/.test(w)) return 'hand';
+  if (/foot/.test(w)) return 'foot';
+  if (/eye|socket/.test(w)) return 'eye';
+  return null;
+}
+
+// Scan (once) + de-age (once, >30 only). Mutates state; idempotent on re-call.
+function _rebirthApply(state) {
+  if (!state) return;
+  var txt = state._card_raw_text || '';
+  if (!state._rebirth_healed_done) {
+    var heal = { illness: null, limb: null, limb_side: '' };
+    var mi = txt.match(_REBIRTH_ILLNESS_RE);
+    if (mi) heal.illness = mi[0];
+    var ml = txt.match(_REBIRTH_LIMB_RE);
+    if (ml) {
+      var limbWord = ml[1] || ml[2] || ml[3] || ml[4] || ml[0];
+      heal.limb = _rebirthNormalizeLimb(limbWord);
+      var around = txt.slice(Math.max(0, (ml.index || 0) - 24), (ml.index || 0) + ml[0].length + 8);
+      var sm = around.match(/\b(left|right)\b/i);
+      if (sm) heal.limb_side = sm[1].toLowerCase();
+    }
+    state._tx_heal = heal;
+    state._rebirth_healed_done = true;
+  }
+  if (state._reborn_age == null) {
+    var ageNum = parseInt(state._card_age, 10);
+    if (!isNaN(ageNum) && ageNum > 30) {
+      var roll = (typeof randInt === 'function') ? randInt(1, 6) : (Math.floor(Math.random() * 6) + 1);
+      var newAge = 19 + roll; // d6: 1->20 ... 6->25
+      state._original_age = state._card_age;
+      state._reborn_age = newAge;
+      state._card_age = String(newAge);
+      if (Array.isArray(state.roll_log)) {
+        state.roll_log.push({ turn: state.turn, type: 'rebirth_age', message: 'rebirth de-age d6=' + roll + ' -> age ' + newAge + ' (was ' + state._original_age + ')' });
+      }
+    }
+  }
+}
+
+// Build the <tx> lines for the rebirth framing (reads state set by _rebirthApply).
+function _rebirthTxLines(state) {
+  var out = [];
+  if (!state) return out;
+  out.push('  <rebirth>This is a freshly-made body, not the old one altered. It forms whole, healthy, and young; the former physical self is gone except a faint passing resemblance — a ghost of the old face in the new one. Render the wholeness and the newness, not a repair of the old body.</rebirth>');
+  if (state._reborn_age != null) {
+    out.push('  <new-age>The new body is ' + state._reborn_age + ' years old (the former ' + (state._original_age || 'older') + '-year-old body is gone). Render it as a young adult.</new-age>');
+  }
+  var heal = state._tx_heal || {};
+  if (heal && heal.illness) {
+    out.push('  <heal illness="' + heal.illness + '">The illness that was killing the old body (' + heal.illness + ') is simply absent in the new one — not treated, not in remission: gone, because this body was never sick. Render the strange relief of a body that suddenly works.</heal>');
+  }
+  if (heal && heal.limb) {
+    var label = (heal.limb_side ? heal.limb_side + ' ' : '') + heal.limb;
+    var guide = LIMB_REGROWTH_GUIDES[heal.limb] || '';
+    if (guide) out.push('  <limb-regrowth-guide limb="' + label + '">' + guide + '</limb-regrowth-guide>');
+  }
+  return out;
+}
+
 function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, state) {
   const color = pillDescriptor.color || 'unknown';
   var modifier = pillDescriptor.body_modifier;
@@ -14632,6 +14716,14 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   if (_wiRegister) lines.push('  <reaction-register>' + _wiRegister + '</reaction-register>');
   // v7.7.26 — Intake register — framing for HOW the act of taking the pill is rendered.
   if (_intakeRegister) lines.push('  <intake-register>' + _intakeRegister + '</intake-register>');
+  // v7.8.0 — rebirth (transformative pills only): new young whole body, heal/limb regrowth, passing resemblance.
+  if (!noChange) {
+    try {
+      _rebirthApply(state);
+      var _rbLines = _rebirthTxLines(state);
+      for (var _rbi = 0; _rbi < _rbLines.length; _rbi++) lines.push(_rbLines[_rbi]);
+    } catch (_rbErr) { console.log('[REBIRTH] skipped: ' + _rbErr); }
+  }
   // Override clause — engine state wins over card-level persistence claims.
   lines.push('  <override>The new body is the only body that exists from this turn forward. Previous anatomy, gear, chastity devices, and any "permanent" body claims from the card no longer apply.</override>');
   lines.push('</tx>');
@@ -14640,7 +14732,7 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   // version only required "every stage in the genital-tx-guide" — models took
   // that literally and skipped chest/face/hair/voice. Now each present guide
   // must show all its stages, and a length floor blocks compression.
-  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. There are multiple stage-list guides above (frame, chest, face, hair, voice, skin, genitals — only the ones present this turn apply). The reaction-register and intake-register tell you HOW the character relates to the change emotionally and to the act of intake. RENDER EVERY STAGE OF EVERY PRESENT GUIDE in the character\'s voice — do not compress multiple stages into a single phrase, do not skip stages, do not let one axis (especially genitals) crowd out the others. Minimum one distinct beat for each guide present plus one for the reaction. Narrate it the way THIS character would experience it — through their mannerisms, dialect, kinks, and natural turn-length. Don\'t list body parts; don\'t produce a paragraph per area; weave the axes through the character\'s reaction. The body MUST end as the target listed above, and every stage in every guide MUST be visible in the prose. HOW you narrate it is yours.</tx-direction>');
+  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. There are multiple stage-list guides above (frame, chest, face, hair, voice, skin, genitals — only the ones present this turn apply). The reaction-register and intake-register tell you HOW the character relates to the change emotionally and to the act of intake. RENDER EVERY STAGE OF EVERY PRESENT GUIDE in the character\'s voice — do not compress multiple stages into a single phrase, do not skip stages, do not let one axis (especially genitals) crowd out the others. Minimum one distinct beat for each guide present plus one for the reaction. Narrate it the way THIS character would experience it — through their mannerisms, dialect, kinks, and natural turn-length. Don\'t list body parts; don\'t produce a paragraph per area; weave the axes through the character\'s reaction. The body MUST end as the target listed above, and every stage in every guide MUST be visible in the prose. If a <rebirth> note is present this is a NEW body — render it forming whole and young, not the old one repaired, keeping only a faint passing resemblance to who they were; when <new-age>, <heal>, or a <limb-regrowth-guide> are present, render the youth, the healing, and any limb regrowth (through its stages) as part of that same transformation. HOW you narrate it is yours.</tx-direction>');
 
   return _stripEffectNames(lines.join('\n'));
 }
@@ -17348,6 +17440,8 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     var cardAge = extractCardAge(systemText, rs);
     if (cardAge) state._card_age = cardAge.trim();
   }
+  // v7.8.0 — stash raw card text so the rebirth module can scan it for illness / missing-limb.
+  if (typeof systemText === 'string' && systemText) state._card_raw_text = systemText;
 
   // Session boundary reset — fires the turn AFTER male orgasm was detected
   if (state._session_end_pending) {
