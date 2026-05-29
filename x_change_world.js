@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.8.0",
+  "version": "7.8.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7078,6 +7078,9 @@ function _firePillConsume(engine, color, state) {
   }
   engine.setFlag('pill_taken_this_turn', { ttl: 1, value: color });
   engine.clearFlag('pill_pending');
+  // v7.8.1 — clear the durable pending record now it's consumed (mirrors the
+  // pill_pending flag clear above; copy-back then removes it from realState).
+  if (state && state._xr_pending_pill) delete state._xr_pending_pill;
   if (engine.isFlagActive('pill_intake_first_person')) engine.setFlag('pill_persona_target_this_turn', { ttl: 1 });
   // v7.7.26 — three-state intake consent (covert / forced / voluntary).
   // covert = laced/spiked/drugged (covert path fired)
@@ -7115,14 +7118,21 @@ function registerPillIntake(engine) {
   // realistic conversational pacing while still letting pending expire if user
   // genuinely moves on. Cleared earlier by consume or by overwrite (D14).
   engine.registerHandler('setPillPending', state => {
-    engine.setFlag('pill_pending', {
-      ttl: 10,
-      value: {
-        color: engine.getFlagValue('pill_color_detected'),
-        effects: engine.getFlagValue('pill_descriptor_effects_present') || null,
-        modifier: engine.getFlagValue('pill_descriptor_body_modifier_present') || null,
-      },
-    });
+    var _ppVal = {
+      color: engine.getFlagValue('pill_color_detected'),
+      effects: engine.getFlagValue('pill_descriptor_effects_present') || null,
+      modifier: engine.getFlagValue('pill_descriptor_body_modifier_present') || null,
+    };
+    engine.setFlag('pill_pending', { ttl: 10, value: _ppVal });
+    // v7.8.1 — also persist to durable state (engine flag Map is in-memory only,
+    // lost on reload). Rehydrated at runTurn top. Character-target only (mirrors
+    // legacy state._pending_pill, which is character-root). _turn stamps the offer
+    // turn for staleness expiry mirroring the flag's ttl.
+    if (state && !engine.isFlagActive('pill_persona_target_this_turn')) {
+      var _dp = { color: _ppVal.color, effects: _ppVal.effects, modifier: _ppVal.modifier };
+      _dp._turn = (state.turn != null ? state.turn : null);
+      state._xr_pending_pill = _dp;
+    }
   });
   engine.registerHandler('consumePillFromColorDetected', state => _firePillConsume(engine, engine.getFlagValue('pill_color_detected'), state));
   engine.registerHandler('consumePillFromPending', state => {
@@ -7235,6 +7245,8 @@ function registerAntidote(engine) {
     delete t._pending_pill_text;
     delete t._pill_descriptor_this_turn;
     engine.clearFlag('pill_pending');
+    // v7.8.1 — also clear the durable rebuild pending record
+    if (state && state._xr_pending_pill) delete state._xr_pending_pill;
     if (t.flags) delete t.flags._surrogate_pre_erode_done;
     engine.setFlag('antidote_applied_this_turn', { ttl:1 });
   });
@@ -7869,6 +7881,11 @@ registerMasculinity(engine);
 const REBUILD_OWNED_FIELDS = [
   'active_pill', 'active_effects',
   'form', '_pending_body_modifier',
+  // v7.8.1 — durable pending-pill record (rebuild-owned). The engine's pill_pending
+  // flag lives in an in-memory Map (lost on process reload); this state field
+  // round-trips through chat state and is rehydrated into the flag at the top of
+  // runTurn, so a pending offer survives a session reload between offer and intake.
+  '_xr_pending_pill',
   'pregnancies_completed',
   'active_side_effects',
   '_hair_trigger_active', '_two_in_chamber_active',
@@ -7940,6 +7957,22 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
     return;
   }
   engine.tick();
+  // v7.8.1 — rehydrate pending pill from durable state. The engine's pill_pending
+  // flag lives in an in-memory Map (lost on process reload); shadow._xr_pending_pill
+  // round-trips through chat state. If a pending was recorded but the flag isn't live
+  // (e.g. a reload happened between the offer turn and the intake turn), restore it so
+  // the rebuild consumes the intake on its own instead of relying on the legacy path.
+  if (shadow && shadow._xr_pending_pill && shadow._xr_pending_pill.color &&
+      !engine.isFlagActive('pill_pending') &&
+      shadow._xr_pending_pill.color !== shadow.active_pill) {
+    var _rp = shadow._xr_pending_pill;
+    var _rpStale = (_rp._turn != null && shadow.turn != null && (shadow.turn - _rp._turn) > 10);
+    if (_rpStale) {
+      delete shadow._xr_pending_pill;
+    } else {
+      engine.setFlag('pill_pending', { ttl: 10, value: { color: _rp.color, effects: _rp.effects, modifier: _rp.modifier } });
+    }
+  }
   // v7.7.9 — detectors scan ONLY user message, not assistant text.
   // Reason: assistant narration (e.g. Hamzah: "I swallow", "clenching empty...in anxious devotion")
   // was triggering false first-person persona-routing AND false creampie detection (regex matched
