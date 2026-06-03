@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.8.1",
+  "version": "7.8.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -13864,6 +13864,16 @@ function _bumpBust(bustStr, cups) {
   return _BUST_LADDER[newIdx] + ' cup';
 }
 
+// Convert a card's declared Bust: string to a _BUST_LADDER index, or -1 if not a
+// real cup size. Gated on the literal "cup" token so prose like "flat" can't be
+// misread as F-cup. For a declared range (e.g. "D-DD cup") the first letter (low
+// end) is the floor — the minimum the card guarantees.
+function _cardBustFloorIdx(bustStr) {
+  if (!bustStr || !/cup/i.test(String(bustStr))) return -1;
+  var m = String(bustStr).match(/(DD|[A-HJK])/i);
+  return m ? _BUST_LADDER.indexOf(m[1].toUpperCase()) : -1;
+}
+
 function _buildTransformVoiceAnchor(state) {
   if (!state) return '';
   const domMod = _mod(state, 'DOM');
@@ -14441,6 +14451,22 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   var sampledWeight = sampledModEntry && sampledModEntry.weight ? _sampleWeightRange(sampledModEntry.weight) : '';
   var sampledBust = sampledModEntry && sampledModEntry.bust ? _sampleBustRange(sampledModEntry.bust) : '';
   var sampledBuild = modifier || (sampledModEntry && sampledModEntry.build ? sampledModEntry.build.split(',')[0].trim() : '');
+
+  // ── Card bust floor: a female TX never shrinks tits below the card's declared cup ──
+  // If the card declares a Bust: cup size, the body type it transforms into can never
+  // resolve to a SMALLER bust. When the body type would have shrunk below the card's
+  // cup, clamp to the card cup and bias upward — result is same or bigger, trending
+  // bigger (weighted +0/+1/+2 cups = 25%/50%/25%, mean +1). Body types that already
+  // sample bigger than the card keep their value untouched.
+  if (toSex === 'female') {
+    var _floorIdx = _cardBustFloorIdx((cardBody || {}).bust);
+    if (_floorIdx >= 0 && _cardBustFloorIdx(sampledBust) < _floorIdx) {
+      var _nudge = [0, 1, 1, 2][Math.floor(Math.random() * 4)];   // mean +1 → trends bigger, never below floor
+      var _trendIdx = Math.min(_BUST_LADDER.length - 1, _floorIdx + _nudge);
+      sampledBust = _BUST_LADDER[_trendIdx] + ' cup';
+      console.log('[XCW] bust floored to card cup ' + _BUST_LADDER[_floorIdx] + ' +' + _nudge + ' -> ' + sampledBust);
+    }
+  }
 
   // Commit resolved_body to state — engine uses this directly, model does not echo it back
   if (state && (sampledHeight || sampledBuild)) {
