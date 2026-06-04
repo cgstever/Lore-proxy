@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.6",
+  "version": "7.9.7",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17777,7 +17777,11 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     brief: brief,
     // v7.0.0: engine owns the full system message. Condensed summary is appended
     // directly here since the extension no longer injects it via pending.header path.
-    systemPrompt: _condensedSummary
+    // v7.9.7 — drop the <story-so-far> summary on a scene-jump turn. The summary is a
+    // condensed memory of recent turns; after several scenes in one place it's saturated
+    // with that location and was the last thing anchoring the jump (the "locked in
+    // memory" pull). It returns to normal on the next turn.
+    systemPrompt: (_condensedSummary && !state._scene_jump_this_turn)
       ? header + '\n\n<story-so-far>\n' + _condensedSummary.trim() + '\n</story-so-far>'
       : header,
     inject: _injectArr,
