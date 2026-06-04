@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.10",
+  "version": "7.9.11",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17303,13 +17303,30 @@ function processTurn({systemText, messages, state, personaState, config, charNam
 
   const _chatMsgs = (messages || []).filter(function(m) { return m.role === 'user' || m.role === 'assistant'; });
   const chatMsgCount = _chatMsgs.length;
-  const isRegen = (state._last_chat_msg_count != null && chatMsgCount <= state._last_chat_msg_count);
+  // v7.9.11 — regen detection now keys on the LAST USER MESSAGE's identity, not the
+  // message count alone. The old count-only test (chatMsgCount <= stored) had a trap:
+  // `_last_chat_msg_count` is a high-water-mark that only ratchets UP, so after a
+  // backward swipe/delete it stays stale-high — and a genuine NEW message sent from
+  // below the mark (e.g. a fresh *N weeks later* skip) read as count<=stored and got
+  // swallowed by the regen shortcut with ZERO detection. Anchoring on whether the
+  // user's last message actually changed fixes it: a different message is never a
+  // regen, no matter the count; an identical message that didn't grow the count (a
+  // swipe — last assistant removed, same user msg) still is. The count stays as the
+  // tiebreak so a legitimately-repeated identical message (which DOES grow the count)
+  // is processed, not swallowed.
+  var _luHash = 0;
+  for (var _luI = 0; _luI < lastUserMsg.length; _luI++) {
+    _luHash = ((_luHash << 5) - _luHash + lastUserMsg.charCodeAt(_luI)) | 0;
+  }
+  const _sameUserMsg = (state._last_user_msg_hash != null && _luHash === state._last_user_msg_hash);
+  const isRegen = (_sameUserMsg && state._last_chat_msg_count != null && chatMsgCount <= state._last_chat_msg_count);
 
-  console.log('[XCW] Regen check: userPersonaCount=' + chatMsgCount + ' stored=' + (state._last_chat_msg_count ?? 'null') + ' isRegen=' + isRegen);
+  console.log('[XCW] Regen check: userPersonaCount=' + chatMsgCount + ' stored=' + (state._last_chat_msg_count ?? 'null') + ' sameMsg=' + _sameUserMsg + ' isRegen=' + isRegen);
 
   if (!isRegen) {
     state.turn = parseInt(state.turn || 0, 10) + 1;
     state._last_chat_msg_count = chatMsgCount;
+    state._last_user_msg_hash = _luHash;
   }
 
   // Stat generation (first turn only)
