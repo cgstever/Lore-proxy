@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.3",
+  "version": "7.10.4",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -16422,11 +16422,15 @@ function handleResponse({assistantText, userText, state, events, config}) {
       var _txSex = currentSex(state, state._card_sex || 'male', rs);
       if (_txSex === 'female') {
         state._card_strip_words = ['cock','cocks','dick','dicks','penis','balls','ball','testicle','testicles','shaft','foreskin','manhood','erection','cum','semen'];
-        // v7.10.3 — if the cock was caged, scrub the chastity-cage words too so the card the
-        // model reads stops naming a cage that no longer has anything to lock. (Specific terms
-        // only — no bare "cage" so "ribcage" and the like are never mangled.)
+        // v7.10.3/.4 — if the cock was caged, scrub the chastity-cage words too so the card the
+        // model reads stops naming a cage that has nothing left to lock. The extension applies
+        // strip words as \b(word)\b (whole-word — statefullore core.js:686), so bare "cage" is
+        // safe: "ribcage"/"birdcage" never match. Bare "cage" is REQUIRED — Pepper's card uses
+        // it ~10× ("locked in a cage", "cage play"), and without it the model kept the cage and
+        // caged the new clit. 'cage'+'caged'+'chastity' covers "cock cage", "chastity cage",
+        // "chastity device", "locked in chastity" (cock/chastity/cage each strip individually).
         if (state._tx_had_cage) {
-          state._card_strip_words = state._card_strip_words.concat(['caged','chastity','chastity cage','cock cage','cock-cage','chastity device','chastity tube','chastity belt','locked in chastity']);
+          state._card_strip_words = state._card_strip_words.concat(['cage', 'caged', 'chastity']);
         }
       } else if (_txSex === 'male') {
         state._card_strip_words = ['vagina','vaginal','pussy','clit','clitoris','vulva','labia','ovary','ovaries','uterus','womb'];
