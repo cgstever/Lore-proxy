@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.9",
+  "version": "7.9.10",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -2528,12 +2528,12 @@ const LORE_DATA =
         "\\bwater broke\\b",
         "\\bcontractions?\\b",
         "\\bthe baby is coming\\b",
-        "\\bdeliver(?:s|ed|ing|y)?\\b",
-        "\\bborn\\b",
+        "\\bdeliver(?:s|ed|ing)?\\s+(?:the\\s+|her\\s+|his\\s+|our\\s+)?(?:bab(?:y|ies)|child(?:ren)?|infant|twins?)\\b",
+        "\\b(?:bab(?:y|ies)|child(?:ren)?|infant|twins?)\\b.{0,15}\\bborn\\b",
         "\\bpush(?:es|ing|ed)?\\s+(?:the\\s+)?(?:baby|it)\\s+out\\b",
-        "\\bbirth(?:s|ed|ing)?\\b",
+        "\\bbirth(?:ed|ing)\\b",
         "\\/birth",
-        "\\blabor\\b"
+        "\\blabor\\s+(?:starts?|started|begin\\w*|hits?|hit|came|now|pains?)\\b"
       ],
       "source": "last_user",
       "requires_flag": "pregnancy_stage_late"
