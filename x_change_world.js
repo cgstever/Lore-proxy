@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.11",
+  "version": "7.10.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7446,6 +7446,7 @@ function registerPregnancy(engine, opts) {
       state.flags.pregnancy_confirmed = true;
       state._conception_turn = engine.getCurrentTurn();
       state._gestation_weeks = 0;
+      state._due_week = 38 + ((rollD100() - 1) % 5); // v7.10.0 — hidden due-week (38–42), rolled once per pregnancy
       Pregnancy.transition('conceived', 'creampie:'+m);
     }
   });
@@ -7467,13 +7468,20 @@ function registerPregnancy(engine, opts) {
     // pregnancy carried over from before this build, like Colt's), so check the flag first.
     var pregnant = !!((state.flags && state.flags.pregnancy_confirmed) || (state.pregnancy && state.pregnancy.confirmed));
     if (pregnant && state._last_time_skip_turn !== curTurn) {
+      // v7.10.0 — roll a hidden due-week (38–42) once per pregnancy; migrate a pregnancy
+      // that predates it (conceived before v7.10.0) by seeding on the first skip. Fixed
+      // once set, so the week she births at is a settled number, not vague per-turn.
+      if (state._due_week == null) {
+        state._due_week = 38 + ((rollD100() - 1) % 5);
+      }
       // v7.9.3 — migrate a pregnancy that predates the clock (e.g. conceived before
       // v7.9.0, so it has stage flags but no _gestation_weeks): seed from its stage.
       if (state._gestation_weeks == null) {
         state._gestation_weeks = (state.flags && state.flags.pregnancy_stage_late) ? 28
                                : (state.flags && state.flags.pregnancy_stage_showing) ? 12 : 0;
       }
-      state._gestation_weeks = Math.min(40, state._gestation_weeks + weeks);
+      // v7.10.0 — clamp at the due-week (was a hard 40): a skip lands ON term, never past.
+      state._gestation_weeks = Math.min(state._due_week, state._gestation_weeks + weeks);
       if (!state.flags) state.flags = {};
       if (state._gestation_weeks >= 12) {
         state.flags.pregnancy_stage_showing = true;
@@ -7483,37 +7491,51 @@ function registerPregnancy(engine, opts) {
         state.flags.pregnancy_stage_late = true;
         if (Pregnancy.getState() === 'conceived' || Pregnancy.getState() === 'showing') Pregnancy.transition('late', 'time_skip');
       }
+      // v7.10.0 — AUTO-BIRTH at term. Reaching the due-week delivers in this same scene:
+      // run the post-birth lifecycle inline (flag-aware — a migrated pregnancy has no
+      // state.pregnancy object, so we can't gate on it the way the old handleBirth did).
+      // The fired-turn marker is rebuild-owned so the birth fires once and its directive
+      // survives swipes of the birth turn.
+      if (state._gestation_weeks >= state._due_week) {
+        state._term_birth_fired_turn = curTurn;
+        Pregnancy.transition('delivered', 'term_birth');
+        state.pregnancies_completed = (state.pregnancies_completed || 0) + 1;
+        delete state.pregnancy; delete state._conception_turn;
+        delete state._gestation_weeks; delete state._due_week;
+        delete state.flags.pregnancy_confirmed;
+        delete state.flags.pregnancy_stage_showing;
+        delete state.flags.pregnancy_stage_late;
+        Pregnancy.transition('none', 'post_birth_reset');
+      }
     }
     state._last_time_skip_turn = curTurn;
+    // v7.10.0 — a term-birth turn (and its swipes) carries term_birth so the prompt-
+    // builder injects the delivery directive instead of a generic jump. Re-derived every
+    // call from the rebuild-owned fired-turn marker, so a swipe of the birth turn keeps
+    // the directive even though the lifecycle (idempotent on _last_time_skip_turn) won't re-run.
+    var isTermBirth = (state._term_birth_fired_turn === curTurn);
     var gw = state._gestation_weeks || 0;
-    var stage = pregnant ? (gw >= 40 ? 'term' : gw >= 28 ? 'late' : gw >= 12 ? 'showing' : 'early') : null;
-    state._scene_jump_this_turn = { label: label, weeks: weeks, gestation_weeks: gw, stage: stage, pregnant: pregnant };
+    var stage = isTermBirth ? 'birth'
+              : pregnant ? (gw >= 28 ? 'late' : gw >= 12 ? 'showing' : 'early') : null;
+    state._scene_jump_this_turn = { label: label, weeks: weeks, gestation_weeks: gw, stage: stage, pregnant: pregnant, term_birth: isTermBirth };
   });
   // v7.9.0 — clear the scene-jump stamp on any turn that ISN'T a time-skip (and not
   // its swipes). requires_not keeps this from clobbering the stamp on the skip turn
   // itself, regardless of rule order. The stamp is rebuild-owned, so the delete also
   // removes it from main state — the prompt-builder injects only when it is present.
   engine.registerHandler('clearSceneJump', state => { delete state._scene_jump_this_turn; });
-  engine.registerHandler('handleBirth', state => {
-    if (!state.pregnancy || !state.pregnancy.confirmed) return;
-    Pregnancy.transition('delivered', 'birth_event');
-    state.pregnancies_completed = (state.pregnancies_completed || 0) + 1;
-    delete state.pregnancy; delete state._conception_turn;
-    delete state._gestation_weeks; delete state._last_time_skip_turn;
-    if (state.flags) {
-      delete state.flags.pregnancy_confirmed;
-      delete state.flags.pregnancy_stage_showing;
-      delete state.flags.pregnancy_stage_late;
-    }
-    Pregnancy.transition('none', 'post_birth_reset');
-  });
+  // v7.10.0 — handleBirth removed: birth is no longer a discrete event handler. It fires
+  // inline in applyTimeSkip when the gestation clock reaches the rolled due-week (auto-
+  // birth at term). The post-birth lifecycle lives there now, flag-aware for migrated
+  // pregnancies that have no state.pregnancy object.
   engine.registerRule({ name:'pregnancy_check_eligibility', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'checkPregnancyEligibility'}] });
   engine.registerRule({ name:'pregnancy_conception_roll', requires:['detected_creampie_vaginal','pregnancy_eligible_this_turn'], requires_not:['pregnancy_active'], actions:[{type:'call_handler', name:'rollPregnancyConception'}] });
   // v7.9.0 — explicit time-skip drives stage progression (fires even when not
   // pregnant, so the scene-jump is a general capability). Birth stays user-called.
   engine.registerRule({ name:'pregnancy_time_skip', requires:['detected_time_skip'], actions:[{type:'call_handler', name:'applyTimeSkip'}] });
   engine.registerRule({ name:'scene_jump_clear', requires:['turn_start'], requires_not:['detected_time_skip'], actions:[{type:'call_handler', name:'clearSceneJump'}] });
-  engine.registerRule({ name:'pregnancy_birth', requires:['detected_birth','pregnancy_active'], actions:[{type:'call_handler', name:'handleBirth'}] });
+  // v7.10.0 — typed-birth rule removed: birth fires only when the clock reaches the
+  // rolled due-week (auto-birth at term, inline in applyTimeSkip). No text triggers it.
   return { Pregnancy };
 }
 
@@ -7963,6 +7985,10 @@ const REBUILD_OWNED_FIELDS = [
   // the prompt-builder can read the stamp (the guard must survive swipes to avoid
   // double-counting weeks on a regen).
   '_gestation_weeks', '_scene_jump_this_turn', '_last_time_skip_turn',
+  // v7.10.0 — the rolled due-week (38–42) and the one-shot term-birth marker. Owned so
+  // the due-week persists across the pregnancy and the birth fires once / its directive
+  // survives swipes of the birth turn.
+  '_due_week', '_term_birth_fired_turn',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -8037,7 +8063,8 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
   // v7.9.0 — vague stage-text detection removed (it drove a meaningful state off
   // fuzzy prose). Stages now advance off the explicit time-skip marker + clock.
   detectTimeSkip(text, engine);
-  detectBirth(text, engine);
+  // v7.10.0 — detectBirth unwired: birth fires only when the gestation clock reaches the
+  // rolled due-week (auto-birth at term). detectBirth/BIRTH_PATTERNS retained but dead.
   engine.evaluate(shadow);
   // v7.7.0 — copy rebuild-owned fields from shadow back to realState. Rebuild
   // is now authoritative for these fields; legacy mutations are overwritten.
@@ -17874,6 +17901,25 @@ function _buildSceneJumpBlock(sj) {
   if (!sj) return null;
   var label = sj.label || 'some time';
   var L = [];
+  // v7.10.0 — term-birth turn: this jump IS the delivery. Cut straight to labor and the
+  // birth, not a generic at-rest opening.
+  if (sj.term_birth) {
+    L.push('<scene-jump skip="' + _xmlAttr(label) + '">');
+    L.push('TIME-SKIP — the story moves forward ' + label + ', and she has reached FULL TERM. The');
+    L.push('scene that was happening is OVER and behind you — do not continue, resume, or recap it.');
+    L.push('');
+    L.push('This jump opens on her LABOR and the BIRTH. Across this scene she goes into labor and');
+    L.push('delivers the baby — that is the whole point of the cut, and it happens HERE, now. Do not');
+    L.push('stop short of the delivery, fade out before it, or push it to a later scene.');
+    L.push('');
+    L.push('She is the SAME person — keep her exact personality, voice, narration style, and point of');
+    L.push('view from the prior messages. She is delivering at full term and is no longer pregnant once');
+    L.push('the baby is born; render the birth and its immediate aftermath.');
+    L.push('');
+    L.push('Write her next response as the opening of this delivery. Commit fully to the cut.');
+    L.push('</scene-jump>');
+    return L.join('\n');
+  }
   L.push('<scene-jump skip="' + _xmlAttr(label) + '">');
   L.push('TIME-SKIP — the story moves forward ' + label + '. The scene that was happening is OVER and');
   L.push('behind you. Do not continue it, resume it, recap it, reference it, or have her miss,');
@@ -17890,11 +17936,7 @@ function _buildSceneJumpBlock(sj) {
   L.push('already has: describe it as simply hers, NOT as "new", "changed", "still settling", or');
   L.push('"growing".');
   L.push('');
-  if (sj.pregnant && sj.stage === 'term') {
-    L.push('PREGNANCY: she is now at FULL TERM (~40 weeks) — her due date. Her body is heavily');
-    L.push('pregnant. The birth is the next thing that happens here; she does not get any more');
-    L.push('pregnant, and time does not move past this until she has given birth.');
-  } else if (sj.pregnant) {
+  if (sj.pregnant) {
     var wk = Math.round(sj.gestation_weeks || 0);
     var desc = sj.stage === 'late' ? 'heavily pregnant, a large belly'
              : sj.stage === 'showing' ? 'visibly pregnant, a clear rounded belly'
