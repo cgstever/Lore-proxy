@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.8",
+  "version": "7.9.9",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -2494,8 +2494,8 @@ const LORE_DATA =
     "creampie_vaginal": {
       "patterns": [
         "\\bcreampie(?:s|d)?\\b",
-        "(?:cum|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill|finish).{0,60}(?:inside|into|in\\b|womb|uterus|cervix|her pussy|your pussy)",
-        "(?:inside|into|womb|uterus|cervix).{0,60}(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)",
+        "\\b(?:cum|came|seed|load|release|unload|shoot|spray|explod|pour|spill|empty|drain|pump|flood|fill(?:s|ed|ing)?\\b|finish).{0,60}(?:inside|into|in\\b|womb|uterus|cervix|her pussy|your pussy)",
+        "\\b(?:inside|into|womb|uterus|cervix)\\b.{0,60}\\b(?:came|cumming|cummed|cums|poured|spilled|shot|sprayed|exploded|pumped|flooded|filled|released|emptied|drained|squirted|unloaded)\\b",
         "(?<!will |would |can |could |should |might |must |gonna |going to |want to |wants to |wanted to |plan to |plans to |planning to |try to |tries to |trying to |need to |needs to |ready to |about to |hope to |hopes to |hoping to |love to |loves to |like to |likes to |let me |let's |let us |to )breed(?:s|ing)? (?:me|you|her)"
       ],
       "source": "last_user",
@@ -6939,7 +6939,7 @@ const CREAMPIE_PATTERNS = [
   // v7.7.43 — augmented group3 with `with\s+(?:cum|seed|load|jizz|spunk)` so
   // "filled her with cum" / "fill her with seed" still catch (the legit
   // creampie phrasings) now that pattern 2 no longer accepts bare `fill`.
-  /\b(?:came|cum|finish\w*|empt(?:y|ied|ying)|fill\w*|breed\w*|seed\w*)[\s\S]{0,15}\b(?:deep|hard|her|me|you|himself|herself)\b[\s\S]{0,30}\b(?:bare|raw|deep|inside|her\s+core|deep\s+inside|with(?:\s+a|\s+everything|\s+(?:cum|seed|load|jizz|spunk)))/i,
+  /\b(?:came|cum|finish\w*|empt(?:y|ied|ying)|fill(?:s|ed|ing)?\b|breed\w*|seed\w*)[\s\S]{0,15}\b(?:deep|hard|her|me|you|himself|herself)\b[\s\S]{0,30}\b(?:bare|raw|deep|inside|her\s+core|deep\s+inside|with(?:\s+a|\s+everything|\s+(?:cum|seed|load|jizz|spunk)))/i,
 ];
 const MALE_ORGASM_EXTERNAL_PATTERNS = [
   /\bpull(?:s|ed)?\s+out\b[\s\S]{0,40}\b(?:cum|came|finish|climax)\w*/i,
