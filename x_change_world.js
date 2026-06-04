@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.7",
+  "version": "7.9.8",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17865,7 +17865,8 @@ function _buildSceneJumpBlock(sj) {
   L.push('');
   L.push('Open a brand-new scene, ' + label + ' later, in an ORDINARY, non-sexual moment with no');
   L.push('connection to what just happened — a different place, an everyday activity, fully');
-  L.push('clothed and at ease.');
+  L.push('clothed and at ease. This is a calm, at-rest moment: she is relaxing, not in the');
+  L.push('middle of chores or work.');
   L.push('');
   L.push('She is the SAME person — keep her exact personality, voice, narration style, and point');
   L.push('of view (first vs third person, tense) from the prior messages. She has the body she');
