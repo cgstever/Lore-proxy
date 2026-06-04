@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.0",
+  "version": "7.10.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17908,15 +17908,17 @@ function _buildSceneJumpBlock(sj) {
     L.push('TIME-SKIP — the story moves forward ' + label + ', and she has reached FULL TERM. The');
     L.push('scene that was happening is OVER and behind you — do not continue, resume, or recap it.');
     L.push('');
-    L.push('This jump opens on her LABOR and the BIRTH. Across this scene she goes into labor and');
-    L.push('delivers the baby — that is the whole point of the cut, and it happens HERE, now. Do not');
-    L.push('stop short of the delivery, fade out before it, or push it to a later scene.');
+    L.push('This single response IS the birth, start to finish. Within THIS ONE message she goes into');
+    L.push('labor AND delivers the baby — by the end of your reply the baby is born and the delivery is');
+    L.push('done. Do NOT open a drawn-out labor to be continued, stop mid-contraction, fade out before');
+    L.push('the baby arrives, or spread the birth across future messages. It resolves here, completely,');
+    L.push('in this one message — the way a transformation resolves in a single response.');
     L.push('');
     L.push('She is the SAME person — keep her exact personality, voice, narration style, and point of');
-    L.push('view from the prior messages. She is delivering at full term and is no longer pregnant once');
-    L.push('the baby is born; render the birth and its immediate aftermath.');
+    L.push('view from the prior messages. Once the baby is born she is no longer pregnant; end the');
+    L.push('message with the birth fully resolved — baby delivered, the immediate aftermath.');
     L.push('');
-    L.push('Write her next response as the opening of this delivery. Commit fully to the cut.');
+    L.push('Write her next response as this complete, self-contained delivery. Commit fully.');
     L.push('</scene-jump>');
     return L.join('\n');
   }
