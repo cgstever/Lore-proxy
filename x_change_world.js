@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.1",
+  "version": "7.9.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7462,7 +7462,10 @@ function registerPregnancy(engine, opts) {
     // fits (the extension does NOT increment it on a regen); the rebuild's internal
     // turn counter may tick per generation, which would double-count weeks on a swipe.
     var curTurn = (state.turn != null ? state.turn : 0);
-    var pregnant = !!(state.pregnancy && state.pregnancy.confirmed);
+    // v7.9.2 — pregnancy_confirmed is the rebuild-owned flag and the reliable signal.
+    // The state.pregnancy object is NOT rebuild-owned and is often absent (e.g. a
+    // pregnancy carried over from before this build, like Colt's), so check the flag first.
+    var pregnant = !!((state.flags && state.flags.pregnancy_confirmed) || (state.pregnancy && state.pregnancy.confirmed));
     if (pregnant && state._last_time_skip_turn !== curTurn) {
       state._gestation_weeks = Math.min(40, (state._gestation_weeks || 0) + weeks);
       if (!state.flags) state.flags = {};
@@ -17778,8 +17781,11 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     // Phase 1: Story Beat Tracker additions (kept for state tracking)
     storySummary: _storySummary,
     // v6.5.213: include _deferred_tx_archive so deferred TX first-gen also gets priority
-    recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive) ? 1 : 3,
-    priorityInjection: !!(state._pill_descriptor_this_turn || state._deferred_transformation || state._deferred_tx_archive),
+    recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive || state._scene_jump_this_turn) ? 1 : 3,
+    // v7.9.2 — a scene-jump turn is ALSO a priority turn: the extension only appends
+    // priorityDirective when priorityInjection is true (or recentMessageCount===1), so
+    // without this the <scene-jump> block was built but never injected into the prompt.
+    priorityInjection: !!(state._pill_descriptor_this_turn || state._deferred_transformation || state._deferred_tx_archive || state._scene_jump_this_turn),
     // v7.7.7 — engine-owned priority append text (the <transformation> block + voice-led tx-direction).
     // Extension v2.0.7+ appends this at message[-1] on priority turns; falsy = no append.
     // Keeps the extension lore-agnostic — all TX prose lives here in the lore module.
