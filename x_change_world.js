@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.1",
+  "version": "7.10.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7948,15 +7948,22 @@ const REBUILD_OWNED_FIELDS = [
   // runTurn, so a pending offer survives a session reload between offer and intake.
   '_xr_pending_pill',
   'pregnancies_completed',
-  'active_side_effects',
-  '_hair_trigger_active', '_two_in_chamber_active',
+  // v7.10.2 — PULLED active_side_effects + the side-effect activation flags from rebuild
+  // ownership. They were rebuild-owned, but the rebuild only acquires side effects on the
+  // narrow character_orgasm_this_turn (arousal-gate) path, while the legacy checkSideEffects
+  // acquires on the broad events.orgasm / gate-cross path. So the rebuild's empty shadow value
+  // overwrote every legacy acquisition → ZERO side effects since the rebuild. This is the exact
+  // failure the v7.7.18 note documents ("rebuild coverage narrower → copy-back DELETES"); it
+  // pulled session_orgasm_count etc. but missed these. Legacy is now authoritative for the
+  // side-effect set, so its writes persist. (active_side_effects + the two flags it sets here;
+  // the other three activation flags pulled below.)
   'sessions_completed',
   '_breeder_orgasm_count', '_breeder_dc_current', '_breeder_compulsion',
   '_surrogate_post_birth_turns', '_surrogate_arousal_floor',
   '_bimbo_stage', '_psyche_stage',
-  '_extra_fertile_active',
-  '_excitable_ovaries_active',
-  '_confirmed_submissive_active',
+  // v7.10.2 — _extra_fertile_active / _excitable_ovaries_active / _confirmed_submissive_active
+  // pulled with active_side_effects (see note above): the legacy drives the side-effect LIST,
+  // so these per-effect flags follow it out of rebuild-ownership to stop the wipe.
   // v7.7.28 — _intake_consent is stamped on the shadow target by _firePillConsume
   // but buildTransformationGuidance reads from realState. Without this copy-back
   // the intake-register defaults to 'voluntary' even when intake was covert/forced.
