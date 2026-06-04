@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.0",
+  "version": "7.9.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -18269,10 +18269,12 @@ function buildXcwHudHtml(state, rs) {
   var flags = s.flags || {};
   var pregCompleted = parseInt(s.pregnancies_completed || 0, 10);
   if (flags.pregnancy_confirmed) {
-    var conTurn = s._conception_turn || 0;
-    var pregAge = turn - conTurn;
+    // v7.9.1 — show the gestation clock (fiction-weeks) + stage, not a turn count.
+    // Mirrors the engine's stage thresholds (showing >=12, late >=28, term >=40).
+    var gw = Math.round(parseFloat(s._gestation_weeks || 0));
+    var pStage = gw >= 40 ? 'full term' : gw >= 28 ? 'late' : gw >= 12 ? 'showing' : 'early';
     pregHtml = '<div style="margin-top:6px;padding:4px 6px;background:#1a0a1a;border:1px solid #4a148c;border-radius:4px;font-size:12px;">' +
-      '<span style="color:#ce93d8;">&#x1F930; Pregnant</span> · Turn ' + pregAge +
+      '<span style="color:#ce93d8;">&#x1F930; Pregnant</span> · ~' + gw + ' weeks · ' + pStage +
       (pregCompleted ? ' · Births ' + pregCompleted : '') +
       '</div>';
   } else if (pregCompleted > 0) {
