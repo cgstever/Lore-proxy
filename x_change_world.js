@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.5",
+  "version": "7.9.6",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7487,12 +7487,7 @@ function registerPregnancy(engine, opts) {
     state._last_time_skip_turn = curTurn;
     var gw = state._gestation_weeks || 0;
     var stage = pregnant ? (gw >= 40 ? 'term' : gw >= 28 ? 'late' : gw >= 12 ? 'showing' : 'early') : null;
-    // v7.9.4 — capture the setting we're leaving so the directive can forbid reopening
-    // there (otherwise a jump from one mundane scene lands in a near-identical one —
-    // e.g. kitchen-cooking -> kitchen-cooking, "same scene, different food").
-    var _st = state._scene_tracker || {};
-    var priorScene = (_st.location || _st.char_position || '').toString().slice(0, 80);
-    state._scene_jump_this_turn = { label: label, weeks: weeks, gestation_weeks: gw, stage: stage, pregnant: pregnant, prior_scene: priorScene };
+    state._scene_jump_this_turn = { label: label, weeks: weeks, gestation_weeks: gw, stage: stage, pregnant: pregnant };
   });
   // v7.9.0 — clear the scene-jump stamp on any turn that ISN'T a time-skip (and not
   // its swipes). requires_not keeps this from clobbering the stamp on the skip turn
@@ -17867,10 +17862,6 @@ function _buildSceneJumpBlock(sj) {
   L.push('Open a brand-new scene, ' + label + ' later, in an ORDINARY, non-sexual moment with no');
   L.push('connection to what just happened — a different place, an everyday activity, fully');
   L.push('clothed and at ease.');
-  if (sj.prior_scene) {
-    L.push('The setting you are LEAVING is: "' + sj.prior_scene + '". Do NOT reopen there or in a');
-    L.push('near-identical one — pick a clearly DIFFERENT location AND a different activity.');
-  }
   L.push('');
   L.push('She is the SAME person — keep her exact personality, voice, narration style, and point');
   L.push('of view (first vs third person, tense) from the prior messages. She has the body she');
