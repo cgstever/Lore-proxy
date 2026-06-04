@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.8.2",
+  "version": "7.9.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7048,6 +7048,23 @@ function detectBirth(text, engine) {
   for (const re of BIRTH_PATTERNS) if (re.test(text)) { engine.setFlag('detected_birth', { ttl: 1 }); return true; }
   return false;
 }
+// v7.9.0 — explicit time-skip marker. Must be the WHOLE user message that turn
+// (e.g. "*2 weeks later*"). Vague time language is intentionally ignored; only a
+// quantified number+unit advances time. Drives the scene-jump directive + the
+// gestation clock (replaces the old +4/+8-turn auto-advance and vague stage-text).
+const TIME_SKIP_RE = /^[\s*\[\(]*(?:after\s+)?(\d{1,3})\s*(day|week|month|year)s?\s*(?:later|after|ahead|forward|on|pass(?:es|ed)?|go(?:es)?\s+by)?[\s*\].)]*$/i;
+function detectTimeSkip(text, engine) {
+  if (!text || typeof text !== 'string') return false;
+  var m = text.trim().match(TIME_SKIP_RE);
+  if (!m) return false;
+  var n = parseInt(m[1], 10);
+  if (!n || n < 1) return false;
+  var unit = m[2].toLowerCase();
+  var weeks = unit === 'day' ? (n / 7) : unit === 'month' ? (n * 4.345) : unit === 'year' ? (n * 52) : n;
+  var label = n + ' ' + unit + (n === 1 ? '' : 's');
+  engine.setFlag('detected_time_skip', { ttl: 1, value: { weeks: weeks, label: label } });
+  return true;
+}
 
 // ────────────────────────────────────────────────────────────────────
 // Module registration (all 11 modules inlined)
@@ -7213,6 +7230,9 @@ function _getAntidoteTarget(engine, state) {
 function _isPregnancyLocked(t) {
   if (t.pregnancy && t.pregnancy.confirmed) return true;
   if (t.flags && t.flags.pregnancy_confirmed) return true;
+  // v7.9.0 — a body that has EVER carried a pregnancy stays locked: the antidote
+  // cannot revert it, even after birth.
+  if ((t.pregnancies_completed || 0) > 0) return true;
   return false;
 }
 function registerAntidote(engine) {
@@ -7408,7 +7428,7 @@ function registerPregnancy(engine, opts) {
   const rng = opts.rng || Math.random;
   const rollD100 = () => Math.floor(rng() * 100) + 1;
   const Pregnancy = createPregnancyFSM(engine);
-  ['detected_pregnancy_stage_showing','detected_pregnancy_stage_late','detected_birth',
+  ['detected_pregnancy_stage_showing','detected_pregnancy_stage_late','detected_birth','detected_time_skip',
    'pregnancy_eligible_this_turn','pregnancy_conception_attempted',
    'pregnancy_none_this_turn','pregnancy_conceived_this_turn','pregnancy_showing_this_turn','pregnancy_late_this_turn','pregnancy_delivered_this_turn']
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
@@ -7425,43 +7445,52 @@ function registerPregnancy(engine, opts) {
       if (!state.flags) state.flags = {};
       state.flags.pregnancy_confirmed = true;
       state._conception_turn = engine.getCurrentTurn();
+      state._gestation_weeks = 0;
       Pregnancy.transition('conceived', 'creampie:'+m);
     }
   });
-  engine.registerHandler('autoAdvancePregnancyStage', state => {
-    if (!state.pregnancy || !state.pregnancy.confirmed) return;
-    const ct = state._conception_turn || 0;
-    const ts = engine.getCurrentTurn() - ct;
-    if (Pregnancy.getState() === 'conceived' && ts >= 4) {
-      Pregnancy.transition('showing', 'auto_turn_count');
-      if (!state.flags) state.flags = {}; state.flags.pregnancy_stage_showing = true;
-    }
-    if (Pregnancy.getState() === 'showing' && ts >= 8) {
-      Pregnancy.transition('late', 'auto_turn_count');
-      if (!state.flags) state.flags = {}; state.flags.pregnancy_stage_late = true;
-    }
-  });
-  engine.registerHandler('confirmPregnancyShowingFromText', state => {
-    if (!state.pregnancy || !state.pregnancy.confirmed) return;
-    if (Pregnancy.getState() === 'conceived') {
-      Pregnancy.transition('showing', 'text_confirmation');
-      if (!state.flags) state.flags = {}; state.flags.pregnancy_stage_showing = true;
-    }
-  });
-  engine.registerHandler('confirmPregnancyLateFromText', state => {
-    if (!state.pregnancy || !state.pregnancy.confirmed) return;
-    const c = Pregnancy.getState();
-    if (c === 'conceived' || c === 'showing') {
-      Pregnancy.transition('late', 'text_confirmation');
+  // v7.9.0 — explicit time-skip handler. Replaces the turn-counted auto-advance
+  // (+4/+8) AND the vague stage-text confirms. On a "*N … later*" marker: advance
+  // the gestation clock when pregnant (idempotent across swipes, clamped at the
+  // 40-week due date — never skips past it), and ALWAYS stamp the scene-jump for
+  // the prompt-builder (pregnant or not). Birth stays user-called.
+  engine.registerHandler('applyTimeSkip', state => {
+    var v = engine.getFlagValue('detected_time_skip') || {};
+    var weeks = v.weeks || 0;
+    var label = v.label || 'some time';
+    // Idempotency key must be stable across swipes but change across turns. state.turn
+    // fits (the extension does NOT increment it on a regen); the rebuild's internal
+    // turn counter may tick per generation, which would double-count weeks on a swipe.
+    var curTurn = (state.turn != null ? state.turn : 0);
+    var pregnant = !!(state.pregnancy && state.pregnancy.confirmed);
+    if (pregnant && state._last_time_skip_turn !== curTurn) {
+      state._gestation_weeks = Math.min(40, (state._gestation_weeks || 0) + weeks);
       if (!state.flags) state.flags = {};
-      state.flags.pregnancy_stage_late = true; state.flags.pregnancy_stage_showing = true;
+      if (state._gestation_weeks >= 12) {
+        state.flags.pregnancy_stage_showing = true;
+        if (Pregnancy.getState() === 'conceived') Pregnancy.transition('showing', 'time_skip');
+      }
+      if (state._gestation_weeks >= 28) {
+        state.flags.pregnancy_stage_late = true;
+        if (Pregnancy.getState() === 'conceived' || Pregnancy.getState() === 'showing') Pregnancy.transition('late', 'time_skip');
+      }
     }
+    state._last_time_skip_turn = curTurn;
+    var gw = state._gestation_weeks || 0;
+    var stage = pregnant ? (gw >= 40 ? 'term' : gw >= 28 ? 'late' : gw >= 12 ? 'showing' : 'early') : null;
+    state._scene_jump_this_turn = { label: label, weeks: weeks, gestation_weeks: gw, stage: stage, pregnant: pregnant };
   });
+  // v7.9.0 — clear the scene-jump stamp on any turn that ISN'T a time-skip (and not
+  // its swipes). requires_not keeps this from clobbering the stamp on the skip turn
+  // itself, regardless of rule order. The stamp is rebuild-owned, so the delete also
+  // removes it from main state — the prompt-builder injects only when it is present.
+  engine.registerHandler('clearSceneJump', state => { delete state._scene_jump_this_turn; });
   engine.registerHandler('handleBirth', state => {
     if (!state.pregnancy || !state.pregnancy.confirmed) return;
     Pregnancy.transition('delivered', 'birth_event');
     state.pregnancies_completed = (state.pregnancies_completed || 0) + 1;
     delete state.pregnancy; delete state._conception_turn;
+    delete state._gestation_weeks; delete state._last_time_skip_turn;
     if (state.flags) {
       delete state.flags.pregnancy_confirmed;
       delete state.flags.pregnancy_stage_showing;
@@ -7471,9 +7500,10 @@ function registerPregnancy(engine, opts) {
   });
   engine.registerRule({ name:'pregnancy_check_eligibility', requires:['detected_creampie_vaginal'], actions:[{type:'call_handler', name:'checkPregnancyEligibility'}] });
   engine.registerRule({ name:'pregnancy_conception_roll', requires:['detected_creampie_vaginal','pregnancy_eligible_this_turn'], requires_not:['pregnancy_active'], actions:[{type:'call_handler', name:'rollPregnancyConception'}] });
-  engine.registerRule({ name:'pregnancy_auto_advance', requires:['turn_start','pregnancy_active'], actions:[{type:'call_handler', name:'autoAdvancePregnancyStage'}] });
-  engine.registerRule({ name:'pregnancy_showing_text_confirm', requires:['detected_pregnancy_stage_showing','pregnancy_active'], actions:[{type:'call_handler', name:'confirmPregnancyShowingFromText'}] });
-  engine.registerRule({ name:'pregnancy_late_text_confirm', requires:['detected_pregnancy_stage_late','pregnancy_active'], actions:[{type:'call_handler', name:'confirmPregnancyLateFromText'}] });
+  // v7.9.0 — explicit time-skip drives stage progression (fires even when not
+  // pregnant, so the scene-jump is a general capability). Birth stays user-called.
+  engine.registerRule({ name:'pregnancy_time_skip', requires:['detected_time_skip'], actions:[{type:'call_handler', name:'applyTimeSkip'}] });
+  engine.registerRule({ name:'scene_jump_clear', requires:['turn_start'], requires_not:['detected_time_skip'], actions:[{type:'call_handler', name:'clearSceneJump'}] });
   engine.registerRule({ name:'pregnancy_birth', requires:['detected_birth','pregnancy_active'], actions:[{type:'call_handler', name:'handleBirth'}] });
   return { Pregnancy };
 }
@@ -7919,6 +7949,11 @@ const REBUILD_OWNED_FIELDS = [
   // v7.7.42 — climax + begging register rotation guards (last-3 phrase
   // history so the model doesn't see the same scaffold back-to-back).
   '_breeder_climax_seen', '_breeder_begging_seen',
+  // v7.9.0 — gestation clock (fiction-weeks), the per-turn scene-jump stamp, and the
+  // time-skip idempotency key. Owned so the clock + guard persist onto main state and
+  // the prompt-builder can read the stamp (the guard must survive swipes to avoid
+  // double-counting weeks on a regen).
+  '_gestation_weeks', '_scene_jump_this_turn', '_last_time_skip_turn',
 ];
 const REBUILD_OWNED_FLAGS = [
   'pregnancy_confirmed', 'pregnancy_stage_showing', 'pregnancy_stage_late',
@@ -7990,8 +8025,9 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
   detectMaleOrgasmExternal(text, engine);
   detectCumSwallowed(text, engine);
   detectSexEngagement(text, engine);
-  detectPregnancyStageShowing(text, engine);
-  detectPregnancyStageLate(text, engine);
+  // v7.9.0 — vague stage-text detection removed (it drove a meaningful state off
+  // fuzzy prose). Stages now advance off the explicit time-skip marker + clock.
+  detectTimeSkip(text, engine);
   detectBirth(text, engine);
   engine.evaluate(shadow);
   // v7.7.0 — copy rebuild-owned fields from shadow back to realState. Rebuild
@@ -15758,7 +15794,16 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   // so processTurn can emit it as turnResult.priorityDirective for the extension to
   // append at message[-1] on priority turns. Lore owns the prose; extension stays generic.
   if (state) {
-    state._priority_directive_this_turn = (_isTxTurn && txLines.length) ? txLines.join('\n') : null;
+    // v7.9.0 — TX block wins the priority slot; otherwise a fresh scene-jump stamp
+    // (present only on a time-skip turn, auto-cleared by scene_jump_clear) injects the
+    // <scene-jump> directive at the after-last-user generation point.
+    if (_isTxTurn && txLines.length) {
+      state._priority_directive_this_turn = txLines.join('\n');
+    } else if (state._scene_jump_this_turn) {
+      state._priority_directive_this_turn = _buildSceneJumpBlock(state._scene_jump_this_turn);
+    } else {
+      state._priority_directive_this_turn = null;
+    }
   }
 
   // ── Markdown sections ──
@@ -17783,6 +17828,52 @@ function _buildRequiredBlock(state, rs, isPriorityTurn) {
   }
   if (!parts.length) return null;
   return '## REQUIRED\n' + parts.join('\n');
+}
+
+// v7.9.0 — build the <scene-jump> directive from the per-turn stamp. Forces the
+// model to cut to a fresh scene N later instead of continuing the ongoing one
+// (validated against real chats — see engine/PREGNANCY_PACING_SPEC.md). When she's
+// pregnant it carries the authoritative gestation state so the model renders her
+// body rather than guessing or inventing.
+function _buildSceneJumpBlock(sj) {
+  if (!sj) return null;
+  var label = sj.label || 'some time';
+  var L = [];
+  L.push('<scene-jump skip="' + _xmlAttr(label) + '">');
+  L.push('TIME-SKIP — the story moves forward ' + label + '. The scene that was happening is OVER and');
+  L.push('behind you. Do not continue it, resume it, recap it, reference it, or have her miss,');
+  L.push('crave, or reach back to it. Whatever was happening physically or sexually has ended —');
+  L.push('open somewhere completely separate from it.');
+  L.push('');
+  L.push('Open a brand-new scene, ' + label + ' later, in an ORDINARY, non-sexual moment with no');
+  L.push('connection to what just happened — a different place, an everyday activity, fully');
+  L.push('clothed and at ease.');
+  L.push('');
+  L.push('She is the SAME person — keep her exact personality, voice, narration style, and point');
+  L.push('of view (first vs third person, tense) from the prior messages. She has the body she');
+  L.push('already has: describe it as simply hers, NOT as "new", "changed", "still settling", or');
+  L.push('"growing".');
+  L.push('');
+  if (sj.pregnant && sj.stage === 'term') {
+    L.push('PREGNANCY: she is now at FULL TERM (~40 weeks) — her due date. Her body is heavily');
+    L.push('pregnant. The birth is the next thing that happens here; she does not get any more');
+    L.push('pregnant, and time does not move past this until she has given birth.');
+  } else if (sj.pregnant) {
+    var wk = Math.round(sj.gestation_weeks || 0);
+    var desc = sj.stage === 'late' ? 'heavily pregnant, a large belly'
+             : sj.stage === 'showing' ? 'visibly pregnant, a clear rounded belly'
+             : 'early pregnant, not yet showing';
+    L.push('PREGNANCY: she is now ~' + wk + ' weeks along — ' + desc + '. Render her body at this');
+    L.push('stage; this is the one thing that changed with the time, and it is authoritative.');
+  } else {
+    L.push('Nothing about her body or status changed but the date. Do NOT invent a pregnancy or');
+    L.push('any other major change.');
+  }
+  L.push('');
+  L.push('You may lightly acknowledge that time has passed; do not narrate what happened during it.');
+  L.push('Write her next response as a normal, in-character scene-opening. Commit fully to the cut.');
+  L.push('</scene-jump>');
+  return L.join('\n');
 }
 
 // XML attribute-value escaper for the hybrid-format prompt (v7.0.0).
