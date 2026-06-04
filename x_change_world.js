@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.2",
+  "version": "7.10.3",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -14854,6 +14854,17 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
       for (var _rbi = 0; _rbi < _rbLines.length; _rbi++) lines.push(_rbLines[_rbi]);
     } catch (_rbErr) { console.log('[REBIRTH] skipped: ' + _rbErr); }
   }
+  // v7.10.3 — caged cock: if the card describes a chastity cage AND this pill removes the
+  // cock (feminizing, toSex=female), the cage is orphaned — nothing left to lock. Narrate
+  // it falling away and flag it so the post-TX card scrub strips the cage words too.
+  var _cageScan = String((state && state._card_raw_text) || '');
+  try { if (cardBody) _cageScan += ' ' + (typeof cardBody === 'string' ? cardBody : JSON.stringify(cardBody)); } catch (_ce) {}
+  var _CAGE_RE = /\bchastity\s+(?:cage|device|tube|belt|lock|piercing)\b|\b(?:in|locked\s+in)\s+chastity\b|\bcock[\s-]?cage[ds]?\b|\bcaged\s+(?:cock|dick|penis|shaft)\b|\b(?:cock|dick|penis|shaft|member|manhood)\b[\s\S]{0,25}\b(?:cage[ds]?|caged)\b|\b(?:cage[ds]?|caged)\b[\s\S]{0,25}\b(?:cock|dick|penis|shaft)\b/i;
+  var _hadCage = (toSex === 'female') && _CAGE_RE.test(_cageScan);
+  if (state) state._tx_had_cage = _hadCage;
+  if (_hadCage) {
+    lines.push('  <chastity-cage>She was locked in a chastity cage on her cock. With the cock now gone, the cage has nothing left to hold — it loses its grip and drops to the floor. Narrate it coming off and clattering away this turn. She is NOT caged anymore; the cage is on the ground, not on her body, and must never be described as still worn from here on.</chastity-cage>');
+  }
   // Override clause — engine state wins over card-level persistence claims.
   lines.push('  <override>The new body is the only body that exists from this turn forward. Previous anatomy, gear, chastity devices, and any "permanent" body claims from the card no longer apply.</override>');
   lines.push('</tx>');
@@ -16411,6 +16422,12 @@ function handleResponse({assistantText, userText, state, events, config}) {
       var _txSex = currentSex(state, state._card_sex || 'male', rs);
       if (_txSex === 'female') {
         state._card_strip_words = ['cock','cocks','dick','dicks','penis','balls','ball','testicle','testicles','shaft','foreskin','manhood','erection','cum','semen'];
+        // v7.10.3 — if the cock was caged, scrub the chastity-cage words too so the card the
+        // model reads stops naming a cage that no longer has anything to lock. (Specific terms
+        // only — no bare "cage" so "ribcage" and the like are never mangled.)
+        if (state._tx_had_cage) {
+          state._card_strip_words = state._card_strip_words.concat(['caged','chastity','chastity cage','cock cage','cock-cage','chastity device','chastity tube','chastity belt','locked in chastity']);
+        }
       } else if (_txSex === 'male') {
         state._card_strip_words = ['vagina','vaginal','pussy','clit','clitoris','vulva','labia','ovary','ovaries','uterus','womb'];
       } else {
