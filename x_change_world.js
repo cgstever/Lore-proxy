@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.2",
+  "version": "7.9.3",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7467,7 +7467,13 @@ function registerPregnancy(engine, opts) {
     // pregnancy carried over from before this build, like Colt's), so check the flag first.
     var pregnant = !!((state.flags && state.flags.pregnancy_confirmed) || (state.pregnancy && state.pregnancy.confirmed));
     if (pregnant && state._last_time_skip_turn !== curTurn) {
-      state._gestation_weeks = Math.min(40, (state._gestation_weeks || 0) + weeks);
+      // v7.9.3 — migrate a pregnancy that predates the clock (e.g. conceived before
+      // v7.9.0, so it has stage flags but no _gestation_weeks): seed from its stage.
+      if (state._gestation_weeks == null) {
+        state._gestation_weeks = (state.flags && state.flags.pregnancy_stage_late) ? 28
+                               : (state.flags && state.flags.pregnancy_stage_showing) ? 12 : 0;
+      }
+      state._gestation_weeks = Math.min(40, state._gestation_weeks + weeks);
       if (!state.flags) state.flags = {};
       if (state._gestation_weeks >= 12) {
         state.flags.pregnancy_stage_showing = true;
@@ -13638,20 +13644,12 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
     }
   }
 
-  // Pregnancy auto-advance
-  const _flags = state.flags = state.flags || {};
-  const _conTurn = state._conception_turn;
-  if (_flags.pregnancy_confirmed && _conTurn !== null && _conTurn !== undefined) {
-    const _pregAge = (state.turn || 0) - _conTurn;
-    if (_pregAge >= 8 && !_flags.pregnancy_stage_late) {
-      _flags.pregnancy_stage_late = true;
-      _flags.pregnancy_stage_showing = true;
-      notes.push('Pregnancy:auto-advance to late (turn ' + _pregAge + ')');
-    } else if (_pregAge >= 4 && !_flags.pregnancy_stage_showing) {
-      _flags.pregnancy_stage_showing = true;
-      notes.push('Pregnancy:auto-advance to showing (turn ' + _pregAge + ')');
-    }
-  }
+  // v7.9.3 — legacy turn-based pregnancy auto-advance REMOVED. This was the legacy
+  // half of the +4/+8-turn progression; v7.9.0 only removed the rebuild copy, leaving
+  // this one still re-setting the stage flags from (state.turn - _conception_turn) and
+  // emitting "(turn N)" notes every turn — which fought the new gestation clock and
+  // leaked turn-based pregnancy state into the HUD/status. Stages now advance only on
+  // the explicit time-skip clock (applyTimeSkip).
 
   // Masculinity delta
   const pill = state.active_pill;
@@ -18277,7 +18275,11 @@ function buildXcwHudHtml(state, rs) {
   if (flags.pregnancy_confirmed) {
     // v7.9.1 — show the gestation clock (fiction-weeks) + stage, not a turn count.
     // Mirrors the engine's stage thresholds (showing >=12, late >=28, term >=40).
-    var gw = Math.round(parseFloat(s._gestation_weeks || 0));
+    // v7.9.3 — fall back to a stage-derived week count when the clock is absent (a
+    // pregnancy that predates v7.9.0), so it shows a sensible number, never ~0.
+    var gw = s._gestation_weeks != null
+      ? Math.round(parseFloat(s._gestation_weeks))
+      : (flags.pregnancy_stage_late ? 28 : flags.pregnancy_stage_showing ? 12 : 0);
     var pStage = gw >= 40 ? 'full term' : gw >= 28 ? 'late' : gw >= 12 ? 'showing' : 'early';
     pregHtml = '<div style="margin-top:6px;padding:4px 6px;background:#1a0a1a;border:1px solid #4a148c;border-radius:4px;font-size:12px;">' +
       '<span style="color:#ce93d8;">&#x1F930; Pregnant</span> · ~' + gw + ' weeks · ' + pStage +
