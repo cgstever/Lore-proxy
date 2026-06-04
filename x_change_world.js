@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.9.4",
+  "version": "7.9.5",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17745,8 +17745,18 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   var _allChat = (scrubResult.didScrub ? scrubResult.messages : messages || [])
     .filter(function(m) { return m && (m.role === 'user' || m.role === 'assistant'); });
   var _keepCount = _recentCount * 2;
-  var _olderMsgs = _allChat.length > _keepCount ? _allChat.slice(0, _allChat.length - _keepCount) : [];
-  var _recentMsgs = _allChat.length > _keepCount ? _allChat.slice(_allChat.length - _keepCount) : _allChat;
+  var _olderMsgs, _recentMsgs;
+  if (state._scene_jump_this_turn && _allChat.length > 1) {
+    // v7.9.5 — scene-jump: collapse the live window to JUST the marker message, so the
+    // scene being left stops anchoring the model. The old scene stays in chat history
+    // and folds into the condensed summary on the following turns (remembered, not
+    // present). This is what finally drops the "stayed in the same kitchen" pull.
+    _olderMsgs = _allChat.slice(0, _allChat.length - 1);
+    _recentMsgs = _allChat.slice(_allChat.length - 1);
+  } else {
+    _olderMsgs = _allChat.length > _keepCount ? _allChat.slice(0, _allChat.length - _keepCount) : [];
+    _recentMsgs = _allChat.length > _keepCount ? _allChat.slice(_allChat.length - _keepCount) : _allChat;
+  }
 
   // Condense older messages from text only (no engine state)
   var _condensedSummary = _olderMsgs.length > 0
