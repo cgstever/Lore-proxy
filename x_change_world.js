@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.5",
+  "version": "7.10.6",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6819,8 +6819,16 @@ const PROXIMITY_CHARS = 40;
 // matches NEITHER branch (red doesn't accept body, "stocky bull" fails the no-body
 // branch) and is correctly treated as not-a-valid-offer.
 //
-// v7.7.23 — STRICT pattern: color + (optional body) + 1-4 effects + pill_noun
-// all space-adjacent. Rejects "blue eyes flickering to the pink pill" false-positives.
+// v7.7.23 — STRICT pattern: color + (optional body) + 1-4 effects + pill_noun all
+//   space-adjacent. Rejects "blue eyes flickering to the pink pill" false-positives.
+// v7.10.6 — RELAXED effects from {1,4} to {0,4}. v7.7.23's "effect required" was too
+//   strict — it silently dropped legitimate body-only offers like "pink petite pill"
+//   (the Paul-chat bug Cody hit on 2026-06-05). detectPillColor is called only with
+//   lastUserText (line ~8060), so the role==='user' constraint is already enforced
+//   by the caller — no need for belt-and-suspenders. The structural adjacency check
+//   (body/effect keywords must sit between color and pill noun, or none with the
+//   noun directly adjacent) remains the false-positive defense and is stricter than
+//   the legacy proximity match. Now mirrors the v7.10.5 fix to findPillIngest.
 function detectPillColor(text, engine) {
   if (!text || typeof text !== 'string') return null;
   const nounAlt    = PILL_NOUNS.join('|');
@@ -6830,12 +6838,12 @@ function detectPillColor(text, engine) {
   const branchA =
     '\\b(pink|blue|purple)\\b' +
     '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
-    '(?:(?:' + effectsAlt + ')\\s+){1,4}' +
+    '(?:(?:' + effectsAlt + ')\\s+){0,4}' +
     '\\b(?:' + nounAlt + ')\\b';
   // Branch B — no-form-change pills (red/green): NO body modifier slot
   const branchB =
     '\\b(red|green)\\b' +
-    '\\s+(?:(?:' + effectsAlt + ')\\s+){1,4}' +
+    '\\s+(?:(?:' + effectsAlt + ')\\s+){0,4}' +
     '\\b(?:' + nounAlt + ')\\b';
   const re = new RegExp('(?:' + branchA + ')|(?:' + branchB + ')', 'i');
   const m = re.exec(text);
