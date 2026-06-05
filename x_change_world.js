@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.4",
+  "version": "7.10.5",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -12483,35 +12483,17 @@ function findPillIngest(messagesRecent, rs, state) {
     return [null, [], null, false];
   }
 
-  // Build offer regex fresh each call — NOT stateful, uses test() not exec() with lastIndex
-  // v7.7.23 — STRICT pattern. Must be: color + (optional body) + 1-4 effects + pill_noun
-  // all space-adjacent. Was loose proximity match (color within 40 chars of noun, either
-  // direction) which fired on AI's "blue eyes flickering to the pink pill" because 'blue'
-  // was within 40 chars of 'pill'. Now an offer requires the user to type the full
-  // descriptor like "pink slim pinup breeder pill" — color + body + effects + noun.
-  // Effect is REQUIRED (>=1) — color+pill alone is rejected. Body type optional.
-  const ep = rs._raw_event_patterns || {};
-  const colors = (ep.pill_colors || []).map(c => c.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
-  const nouns  = (ep.pill_nouns  || []).map(n => n.replace(/[-\/\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
-  const effectsAlt = ['breeder','bimbo','pinup','denial','bull','compliant','submissive','psyche','surrogate'].join('|');
-  const bodyAlt    = ['petite','slim','athletic','average','curvy','busty','voluptuous','stocky','slender'].join('|');
-  // v7.7.25 — color-aware: pink/blue/purple ALLOW body modifier, red/green REJECT it.
-  // Two-branch regex enforces the no_form_change rule at parse time.
-  const offerRe = (colors && nouns)
-    ? new RegExp(
-        // Branch A — transformation pills (pink/blue/purple)
-        '(?:\\b(pink|blue|purple)\\b' +
-          '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
-          '(?:(?:' + effectsAlt + ')\\s+){1,4}' +
-          '\\b(?:' + nouns + ')\\b)' +
-        '|' +
-        // Branch B — no-form-change pills (red/green): no body modifier
-        '(?:\\b(red|green)\\b' +
-          '\\s+(?:(?:' + effectsAlt + ')\\s+){1,4}' +
-          '\\b(?:' + nouns + ')\\b)',
-        'i'
-      )
-    : null;
+  // v7.10.5 — REVERTED v7.7.23's strict "effect required" inline regex. That fix was
+  // belt-and-suspenders on top of the role==='user' filter (added v7.7.22, line 12539),
+  // and it had a real-world failure: legitimate user offers like "pink petite pill"
+  // (body modifier alone, no effect) were silently dropped because the regex required
+  // {1,4} effects between color and noun. The role filter is the real defense against
+  // AI narration false-positives ("blue eyes flickering to the pink pill" never reaches
+  // this code because AI's role isn't 'user'). Now reusing the lenient color+noun
+  // proximity regex already defined at line 8845 (rs.pill_offer_re) — its job is just to
+  // spot a pill descriptor; parsePillDescriptor() then extracts color/body/effects from
+  // the matched text, and the intake-verb layer (separate concern) gates the actual fire.
+  const offerRe = rs.pill_offer_re || null;
 
   let pendingColor     = (state || {})._pending_pill || null;
   let pendingText      = (state || {})._pending_pill_text || null;
