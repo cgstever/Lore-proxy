@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.7",
+  "version": "7.10.8",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7276,6 +7276,26 @@ function registerAntidote(engine) {
     // v7.8.1 — also clear the durable rebuild pending record
     if (state && state._xr_pending_pill) delete state._xr_pending_pill;
     if (t.flags) delete t.flags._surrogate_pre_erode_done;
+    // v7.10.8 — antidote reverts ONLY the body (gender, bust, H/W, build, anatomy
+    // overlay, strip words, TX summary). Per Cody's scoping decision: masculinity,
+    // side effects, breeder/surrogate accumulated state, and everything else
+    // explicitly STAY — the antidote is a body reset, not a full character reset.
+    // The fields below are NOT rebuild-owned, so deletions on the shadow don't reach
+    // realState; the actual legacy-side cleanup happens in runTurn's antidote hook
+    // (search for `antidote_applied_this_turn` in the legacy integration section).
+    // We keep these deletions on the shadow anyway so the rebuild's own view is
+    // consistent within this turn.
+    delete t._card_anatomy_override;
+    t._card_strip_words = null;
+    delete t._tx_summary;
+    delete t._tx_register;
+    delete t._tx_intake_register;
+    delete t._tx_heal;
+    delete t._tx_had_cage;
+    delete t._rebirth_healed_done;
+    delete t.resolved_body;
+    delete t.card_body;
+    delete t._pre_tx_card_body;
     engine.setFlag('antidote_applied_this_turn', { ttl:1 });
   });
   engine.registerRule({ name:'antidote_route_target', requires:['detected_antidote_taken'], actions:[{type:'call_handler', name:'routeAntidoteTarget'}] });
@@ -17709,16 +17729,46 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     );
     // v7.7.2 — antidote also clears legacy pending-pill markers (these aren't in
     // REBUILD_OWNED_FIELDS, so the copy-back doesn't propagate the clear).
+    // v7.10.8 — extend with the BODY revert. These fields are legacy-owned (the rebuild
+    // can't clear them via copy-back), so they have to be wiped here on realState
+    // directly. Per Cody's scope: antidote reverts the BODY ONLY (gender/bust/H/W/build/
+    // anatomy overlay/strip words/TX summary). Masculinity, side effects, breeder state,
+    // and everything else explicitly STAY — they reflect character development that the
+    // antidote shouldn't undo. The pregnancy-or-ever-pregnant lock has already blocked
+    // the antidote upstream if active (handler returns early before setting the flag).
     if (_xRebuildSystem.engine.isFlagActive('antidote_applied_this_turn')) {
       delete state._pending_pill;
       delete state._pending_pill_desc;
       delete state._pending_pill_text;
       delete state._pill_descriptor_this_turn;
+      // Body revert — drops the post-TX overlays so the model sees the original card body
+      delete state._card_anatomy_override;
+      state._card_strip_words = null;
+      delete state._tx_summary;
+      delete state._tx_register;
+      delete state._tx_intake_register;
+      delete state._tx_heal;
+      delete state._tx_had_cage;
+      delete state._rebirth_healed_done;
+      delete state.resolved_body;        // forces re-resolve from card_body on next read
+      delete state.card_body;            // forces re-parse from _card_raw_text on next read
+      delete state._pre_tx_card_body;    // baseline no longer needed once card_body re-parses
       if (_xRebuildSystem.engine.isFlagActive('antidote_persona_target_this_turn') && state.persona) {
         delete state.persona._pending_pill;
         delete state.persona._pending_pill_desc;
         delete state.persona._pending_pill_text;
         delete state.persona._pill_descriptor_this_turn;
+        delete state.persona._card_anatomy_override;
+        state.persona._card_strip_words = null;
+        delete state.persona._tx_summary;
+        delete state.persona._tx_register;
+        delete state.persona._tx_intake_register;
+        delete state.persona._tx_heal;
+        delete state.persona._tx_had_cage;
+        delete state.persona._rebirth_healed_done;
+        delete state.persona.resolved_body;
+        delete state.persona.card_body;
+        delete state.persona._pre_tx_card_body;
       }
     }
     // v7.7.21 — if rebuild fired pill_taken_this_turn but legacy didn't set
