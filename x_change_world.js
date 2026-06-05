@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.6",
+  "version": "7.10.7",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -10942,7 +10942,26 @@ function growArousal(state, weight, rs) {
     return;
   }
 
+  // v7.10.7 — arousal floor of 80 before the per-tier gate rolls kick in. Without this
+  // floor the legacy gate rolled at every tier boundary starting from arousal 0, so a
+  // low-WIL character (Paul: WIS=5 → -2 mod, ~45% pass rate per tier) would fail some
+  // tier in the 40-70 range and trigger an orgasm. Paul's live data: gate crossed at
+  // arousal 58.6. The rebuild's arousalGateOrgasmCheck (line ~7341) ALREADY had this
+  // floor (`if (a < 80) return`); the legacy gate was inconsistent — fixed now by
+  // mirroring. Below 80, arousal grows freely without rolling. At/above 80 the existing
+  // per-tier d20+stat-vs-DC system runs as before, preserving the negative-block prose,
+  // DC ramp, pass-streak, and fatigue-break mechanics intact.
+  const AROUSAL_GATE_FLOOR = 80;
   let pos = current;
+  if (pos < AROUSAL_GATE_FLOOR) {
+    if (proposed <= AROUSAL_GATE_FLOOR) {
+      setArousal(state, proposed, rs);
+      return;
+    }
+    // proposed crosses the floor — let arousal climb up to the floor freely, then the
+    // loop below handles the per-tier rolls from the floor upward.
+    pos = AROUSAL_GATE_FLOOR;
+  }
 
   while (pos < proposed) {
     const currentTier = Math.floor(pos / TIER_SIZE);
