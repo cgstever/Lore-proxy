@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.9",
+  "version": "7.10.10",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -17808,8 +17808,15 @@ function processTurn({systemText, messages, state, personaState, config, charNam
       delete state._tx_had_cage;
       delete state._rebirth_healed_done;
       delete state.resolved_body;        // forces re-resolve from card_body on next read
-      delete state.card_body;            // forces re-parse from _card_raw_text on next read
-      delete state._pre_tx_card_body;    // baseline no longer needed once card_body re-parses
+      // v7.10.10 — actively RE-PARSE card_body from _card_raw_text instead of just deleting
+      // it. v7.10.8 deleted card_body assuming the next read would re-parse, but the header
+      // builder doesn't re-parse on demand — it just emits "" for missing fields. So Paul
+      // post-antidote showed `<character name="Paul" sex="male">` with NO height/build/bust
+      // instead of the male baseline (6'1"/180lbs/athletic). Call scanCardBody directly to
+      // rebuild card_body with the original card's baseline values. _pre_tx_card_body is
+      // also no longer needed since we re-derive from the source-of-truth raw card text.
+      state.card_body = scanCardBody(state._card_raw_text || '', rs);
+      delete state._pre_tx_card_body;
       if (_xRebuildSystem.engine.isFlagActive('antidote_persona_target_this_turn') && state.persona) {
         delete state.persona._pending_pill;
         delete state.persona._pending_pill_desc;
@@ -17824,7 +17831,8 @@ function processTurn({systemText, messages, state, personaState, config, charNam
         delete state.persona._tx_had_cage;
         delete state.persona._rebirth_healed_done;
         delete state.persona.resolved_body;
-        delete state.persona.card_body;
+        // v7.10.10 — same re-parse for the persona path
+        state.persona.card_body = scanCardBody(state.persona._card_raw_text || '', rs);
         delete state.persona._pre_tx_card_body;
       }
     }
