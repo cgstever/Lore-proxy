@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.12",
+  "version": "7.10.13",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -3965,7 +3965,7 @@ const LORE_DATA =
       },
       "penetration": {
         "weight": 4,
-        "_note": "v7.10.9 — physical-act words for actual penetration. Was missing entirely; arousal climbed only on incidental words (moan/wet/gasp) at 1-2 each, so sex scenes accrued ~4-6 arousal/turn instead of 10-20. The penetration_attempt:12 weight in effect_mechanics is dead config (event never fires) — these keywords plug the gap directly.",
+        "_note": "v7.10.13 — pruned to precision. v7.10.9 added physical-act words but several were ordinary-prose words that fired (weight 4, same as a real thrust, up to scan_cap 8.0) with NO sex happening — confirmed against the live Paul chat: 'pounding' on \"my heart's pounding\", 'stretches' on \"my frame stretches and broadens\" (antidote body revert). Plus idioms guaranteed to misfire in non-sex scenes: ride/riding/rode (riding in a car), buries (buries her face), buried deep (buried deep in thought), sinks in (it sinks in), slide in/slides in/slid in (slides in beside), filling/filled her/me (filled with dread), drives/drove in, and fucking/fucked as an intensifier (\"fucking good\"). Removed all of them; kept only the unambiguous core — penetrate*/thrust* and the motion+inside phrases. Real scenes still score high (these fire on every genuine penetration turn); soft-language turns fall back on the medium tier (moan/wet/clench). Per Cody: 'prefer hard to trigger so it triggers right.'",
         "keywords": [
           "thrust",
           "thrusts",
@@ -3979,31 +3979,8 @@ const LORE_DATA =
           "inside me",
           "deep inside",
           "buried inside",
-          "buried deep",
-          "filling her",
-          "filling me",
-          "filled her",
-          "filled me",
-          "slide in",
-          "slides in",
-          "slid in",
           "slid inside",
-          "sinks in",
-          "sinks inside",
-          "buries",
-          "stretch",
-          "stretches",
-          "stretching",
-          "stretched",
-          "pounding",
-          "pounded",
-          "fucking",
-          "fucked",
-          "ride",
-          "riding",
-          "rode",
-          "drives in",
-          "drove in"
+          "sinks inside"
         ]
       }
     },
