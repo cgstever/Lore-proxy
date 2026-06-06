@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.11",
+  "version": "7.10.12",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7344,8 +7344,15 @@ function registerAntidote(engine) {
     t._antidote_revert_this_turn = true;
     engine.setFlag('antidote_applied_this_turn', { ttl:1 });
   });
+  // v7.10.11 — clear the revert-TX stamp on any turn that ISN'T an antidote (and not
+  // its swipes). Mirrors the scene-jump clear pattern at line ~7610. Keeps the
+  // <antidote-revert> directive fired EXACTLY ONCE per antidote, not bleeding into
+  // subsequent turns. requires_not blocks this from clobbering the stamp on the
+  // antidote turn itself, regardless of rule order.
+  engine.registerHandler('clearAntidoteRevert', state => { delete state._antidote_revert_this_turn; });
   engine.registerRule({ name:'antidote_route_target', requires:['detected_antidote_taken'], actions:[{type:'call_handler', name:'routeAntidoteTarget'}] });
   engine.registerRule({ name:'antidote_apply', requires:['detected_antidote_taken'], actions:[{type:'call_handler', name:'applyAntidote'}] });
+  engine.registerRule({ name:'antidote_revert_clear', requires:['turn_start'], requires_not:['detected_antidote_taken'], actions:[{type:'call_handler', name:'clearAntidoteRevert'}] });
 }
 
 function createSessionFSM(engine) {
