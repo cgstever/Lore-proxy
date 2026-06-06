@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.8",
+  "version": "7.10.9",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -3961,6 +3961,49 @@ const LORE_DATA =
           "want you",
           "take me",
           "fill me"
+        ]
+      },
+      "penetration": {
+        "weight": 4,
+        "_note": "v7.10.9 — physical-act words for actual penetration. Was missing entirely; arousal climbed only on incidental words (moan/wet/gasp) at 1-2 each, so sex scenes accrued ~4-6 arousal/turn instead of 10-20. The penetration_attempt:12 weight in effect_mechanics is dead config (event never fires) — these keywords plug the gap directly.",
+        "keywords": [
+          "thrust",
+          "thrusts",
+          "thrusting",
+          "thrusted",
+          "penetrate",
+          "penetrates",
+          "penetrating",
+          "penetrated",
+          "inside her",
+          "inside me",
+          "deep inside",
+          "buried inside",
+          "buried deep",
+          "filling her",
+          "filling me",
+          "filled her",
+          "filled me",
+          "slide in",
+          "slides in",
+          "slid in",
+          "slid inside",
+          "sinks in",
+          "sinks inside",
+          "buries",
+          "stretch",
+          "stretches",
+          "stretching",
+          "stretched",
+          "pounding",
+          "pounded",
+          "fucking",
+          "fucked",
+          "ride",
+          "riding",
+          "rode",
+          "drives in",
+          "drove in"
         ]
       }
     },
@@ -13776,6 +13819,20 @@ function processEvents(state, events, cardSex, notes, rs, personaEffects, person
       totalDelta += bd;
       state._notes_log = state._notes_log || [];
       state._notes_log.push('masc_trigger:' + src + ' raw=' + bd);
+    }
+    // v7.10.9 — basic-pill damping. A pink/blue/purple pill taken without any pill-effects
+    // (breeder/bimbo/pinup/denial/bull/compliant/submissive/psyche/surrogate) is a "basic"
+    // transformation — the heavy per-color baseline (-3 sex / -2 orgasm for pink) was tuned
+    // assuming breeder-level pills, which overshoots when the user just wanted a body swap.
+    // Cody (Paul chat): "its not a breeder pill its a basic petite [pill] ... drops too fast."
+    // Halve the totalDelta when no pill-effect is active on the character. Pills with effects
+    // (e.g. "pink petite breeder pill") still get the full decay — those ARE the heavy ones.
+    const PILL_EFFECT_NAMES = ['breeder','bimbo','pinup','denial','bull','compliant','submissive','psyche','surrogate'];
+    const hasPillEffect = (state.active_effects || []).some(e => PILL_EFFECT_NAMES.indexOf(e) >= 0);
+    if (!hasPillEffect && totalDelta < 0) {
+      const halved = Math.round(totalDelta * 0.5);
+      state._notes_log.push('masc_basic_pill_damping: ' + totalDelta + ' -> ' + halved);
+      totalDelta = halved;
     }
     if (totalDelta !== 0) {
       _applyMasculinityDelta(state, totalDelta);
