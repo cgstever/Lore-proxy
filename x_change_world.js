@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.11.0",
+  "version": "7.11.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -11716,7 +11716,14 @@ function scanArousal(messagesRecent, state, rs, debug) {
     const text = msg.content || '';
     const role = (msg.role || '').toLowerCase();
 
-    if (role === 'assistant') {
+    // v7.11.1 — scan the USER's messages, not the character's. Arousal should be
+    // driven by what {{user}} writes and does, not by the AI narrating the character's
+    // aroused state (moan/wet/thrust in the AI's own prose was pumping arousal on its
+    // own, so it climbed regardless of {{user}}). Per Cody: "stop scanning char
+    // messages, only user, so i can control it." The user-action verbs (tease/touch/
+    // stroke/finger…) already scan user below; this puts the state/act keyword tiers
+    // (low/medium/high/penetration) on the same side.
+    if (role === 'user') {
       for (const [weight, pat] of rs.arousal_kw || []) {
         if (pat.test(text) && gained < cap) {
           const before = getArousal(state);
