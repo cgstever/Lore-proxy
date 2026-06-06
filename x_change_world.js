@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.10.10",
+  "version": "7.10.11",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7339,6 +7339,9 @@ function registerAntidote(engine) {
     delete t.resolved_body;
     delete t.card_body;
     delete t._pre_tx_card_body;
+    // v7.10.11 — stamp the revert-TX one-shot so the priority-directive selector emits a
+    // <antidote-revert> block this turn (parallel to the pill TX block).
+    t._antidote_revert_this_turn = true;
     engine.setFlag('antidote_applied_this_turn', { ttl:1 });
   });
   engine.registerRule({ name:'antidote_route_target', requires:['detected_antidote_taken'], actions:[{type:'call_handler', name:'routeAntidoteTarget'}] });
@@ -8063,6 +8066,11 @@ const REBUILD_OWNED_FIELDS = [
   // the prompt-builder can read the stamp (the guard must survive swipes to avoid
   // double-counting weeks on a regen).
   '_gestation_weeks', '_scene_jump_this_turn', '_last_time_skip_turn',
+  // v7.10.11 — one-shot stamp set on antidote firing. Used by the priority-directive
+  // selector to inject _buildAntidoteRevertBlock. Auto-clears next turn (no state-change
+  // handler here — it's set fresh each antidote turn and goes unset on subsequent turns
+  // because no handler re-sets it).
+  '_antidote_revert_this_turn',
   // v7.10.0 — the rolled due-week (38–42) and the one-shot term-birth marker. Owned so
   // the due-week persists across the pregnancy and the birth fires once / its directive
   // survives swipes of the birth turn.
@@ -15933,6 +15941,9 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
       state._priority_directive_this_turn = txLines.join('\n');
     } else if (state._scene_jump_this_turn) {
       state._priority_directive_this_turn = _buildSceneJumpBlock(state._scene_jump_this_turn);
+    } else if (state._antidote_revert_this_turn) {
+      // v7.10.11 — antidote reversion gets the same priority slot a pill TX would.
+      state._priority_directive_this_turn = _buildAntidoteRevertBlock(state);
     } else {
       state._priority_directive_this_turn = null;
     }
@@ -17817,6 +17828,9 @@ function processTurn({systemText, messages, state, personaState, config, charNam
       // also no longer needed since we re-derive from the source-of-truth raw card text.
       state.card_body = scanCardBody(state._card_raw_text || '', rs);
       delete state._pre_tx_card_body;
+      // v7.10.11 — also stamp the revert-TX directive trigger on realState (rebuild
+      // owns the field but defensive stamp here covers the legacy-only path too).
+      state._antidote_revert_this_turn = true;
       if (_xRebuildSystem.engine.isFlagActive('antidote_persona_target_this_turn') && state.persona) {
         delete state.persona._pending_pill;
         delete state.persona._pending_pill_desc;
@@ -17989,11 +18003,11 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     // Phase 1: Story Beat Tracker additions (kept for state tracking)
     storySummary: _storySummary,
     // v6.5.213: include _deferred_tx_archive so deferred TX first-gen also gets priority
-    recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive || state._scene_jump_this_turn) ? 1 : 3,
+    recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive || state._scene_jump_this_turn || state._antidote_revert_this_turn) ? 1 : 3,
     // v7.9.2 — a scene-jump turn is ALSO a priority turn: the extension only appends
     // priorityDirective when priorityInjection is true (or recentMessageCount===1), so
     // without this the <scene-jump> block was built but never injected into the prompt.
-    priorityInjection: !!(state._pill_descriptor_this_turn || state._deferred_transformation || state._deferred_tx_archive || state._scene_jump_this_turn),
+    priorityInjection: !!(state._pill_descriptor_this_turn || state._deferred_transformation || state._deferred_tx_archive || state._scene_jump_this_turn || state._antidote_revert_this_turn),
     // v7.7.7 — engine-owned priority append text (the <transformation> block + voice-led tx-direction).
     // Extension v2.0.7+ appends this at message[-1] on priority turns; falsy = no append.
     // Keeps the extension lore-agnostic — all TX prose lives here in the lore module.
@@ -18105,6 +18119,49 @@ function _buildSceneJumpBlock(sj) {
   L.push('You may lightly acknowledge that time has passed; do not narrate what happened during it.');
   L.push('Write her next response as a normal, in-character scene-opening. Commit fully to the cut.');
   L.push('</scene-jump>');
+  return L.join('\n');
+}
+
+// v7.10.11 — antidote revert-TX directive. Parallel to the pill TX block: scaffolds the
+// reverse transformation in one message instead of letting the model wing it. card_body
+// has already been re-parsed to the baseline by the antidote integration hook (v7.10.10),
+// so state.card_body holds the target values to render to.
+function _buildAntidoteRevertBlock(state) {
+  const cb = (state && state.card_body) || {};
+  const baselineSex = (state && state.birthSex) || (state && state._card_sex) || 'original';
+  const h = cb.height_str || '';
+  const w = cb.weight ? (cb.weight + (typeof cb.weight === 'number' ? 'lbs' : '')) : '';
+  const b = (cb.build_keywords && cb.build_keywords.length) ? cb.build_keywords.join(', ') : '';
+  const bust = cb.bust || '';
+  const L = [];
+  L.push('<antidote-revert>');
+  L.push('ANTIDOTE: the pill is unwinding NOW, in THIS one message. Within this single response,');
+  L.push('narrate the body reverting all the way back to its ORIGINAL baseline — the character');
+  L.push('as described in the original Appearance/Anatomy section. By the end of this reply she');
+  L.push('is fully back in her ORIGINAL form; no lingering transformed features.');
+  L.push('');
+  L.push('BASELINE (revert TO this body):');
+  L.push('- sex: ' + baselineSex + (baselineSex === 'male' ? ' (penis, no breasts)' : baselineSex === 'female' ? ' (vagina, original chest)' : ''));
+  if (h)    L.push('- height: ' + h);
+  if (w)    L.push('- weight: ' + w);
+  if (b)    L.push('- build: ' + b);
+  if (bust) L.push('- chest: ' + bust);
+  L.push('');
+  L.push('STAGE-BY-STAGE (mirror a pill TX in reverse — one or two sentences each):');
+  L.push('1. Frame/height shifts back to baseline (grows or shrinks back, bones re-settle)');
+  L.push('2. Build/musculature returns (broadens or narrows; fat redistributes off curves)');
+  L.push('3. Chest reverts (breasts deflate / pectorals return to original)');
+  L.push('4. Hips/waist re-square to original shape');
+  L.push('5. Voice register changes back (deepens or rises to baseline)');
+  L.push('6. Genitals revert (any transformed anatomy unmakes itself, original returns)');
+  L.push('');
+  L.push('MEMORY AND EMOTION STAY — what happened to her happened. The reversion is physical only;');
+  L.push("the character remembers being transformed, remembers how it felt, and reacts to the");
+  L.push('reversion in-character (relief / loss / confusion / mourning the body / whatever fits).');
+  L.push('Effects, side effects, masculinity, and accumulated character development do NOT reset.');
+  L.push('');
+  L.push('Write this response as the complete, single-message reversion + her reaction. Commit fully.');
+  L.push('</antidote-revert>');
   return L.join('\n');
 }
 
