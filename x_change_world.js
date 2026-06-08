@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.3",
+  "version": "7.12.4",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7104,40 +7104,13 @@ function arousalPressure(a) { return arousalBand(a).pressure; }
 const EFFECT_DC_COUNTER_STAT = {bimbo:'CHA',breeder:'SUB',submissive:'SUB',compliant:'CHA',bull:'CHA',denial:'SUB',surrogate:'SUB',psyche:'CHA',pinup:'CHA'};
 function effectCounterStat(e) { return EFFECT_DC_COUNTER_STAT[e] || 'CHA'; }
 
-// ────────────────────────────────────────────────────────────────────
-// Stat-driven GAIN layer (v7.12.0) — character stats modulate the per-turn
-// accumulation SPEED of each rate mechanic. This is SEPARATE from the resist
-// GATES (which already use stats): gates decide IF a threshold is crossed,
-// this decides HOW FAST the meter fills. Central + tunable: one config, one fn.
-// Spec: engine/STAT_DRIVEN_RATES_SPEC.md. Spread ±30% (Cody, 2026-06-07).
-// ────────────────────────────────────────────────────────────────────
-const STAT_GAIN_SPREAD = 0.30;   // max ± deviation from 1.0 (hard clamp)
-const _STAT_GAIN_K     = 0.08;   // factor delta per stat-mod point
-const _avg2 = (a, b) => (a + b) / 2;
-// UNIFORM RULE (Cody 2026-06-07): HIGH stat → LOW rate (slow), LOW stat → HIGH rate (fast).
-// stat-mod +0 (average stat 10) = BASE: factor 1.0, no change. All dir:-1 (resistance).
-// Multi-stat mechanics AVERAGE their resist pair so the ±spread matches single-stat ones.
-const STAT_GAIN_CONFIG = {
-  arousal:     { dir: -1, score: s => getStatMod(s, 'CON') },                                    // sturdy body resists heat-up
-  masculinity: { dir: -1, score: s => _avg2(getStatMod(s, 'DOM'), getStatMod(s, 'WIS')) },       // dominance+will → clings to identity
-  breeder:     { dir: -1, score: s => _avg2(getStatMod(s, 'CON'), getStatMod(s, 'WIS')) },        // resist pair
-  bimbo:       { dir: -1, score: s => _avg2(getStatMod(s, 'INT'), getStatMod(s, 'WIS')) },        // sharp+composed (low INT → spirals)
-  submissive:  { dir: -1, score: s => _avg2(getStatMod(s, 'DOM'), getStatMod(s, 'WIS')) },        // resist pair
-  compliant:   { dir: -1, score: s => _avg2(getStatMod(s, 'WIS'), getStatMod(s, 'INT')) },        // resist pair
-  bull:        { dir: +1, score: s => getStatMod(s, 'DOM') },                                     // AFFINITY (not resistance): a dominant char EMBRACES the bull role → high DOM = FAST
-  denial:      { dir: -1, score: s => _avg2(getStatMod(s, 'WIS'), getStatMod(s, 'CON')) },        // resist pair
-  surrogate:   { dir: -1, score: s => _avg2(getStatMod(s, 'CON'), getStatMod(s, 'WIS')) },        // = breeder fork
-};
-// Returns a clamped multiplier in [1-SPREAD, 1+SPREAD]. Fail-safe: any problem → 1.0
-// (no change), so this can never throw inside a turn.
-function _statGainFactor(state, mech) {
-  try {
-    const cfg = STAT_GAIN_CONFIG[mech];
-    if (!cfg || !state || !state.stats) return 1.0;
-    const f = 1.0 + cfg.dir * _STAT_GAIN_K * cfg.score(state);
-    return Math.max(1 - STAT_GAIN_SPREAD, Math.min(1 + STAT_GAIN_SPREAD, f));
-  } catch (e) { return 1.0; }
-}
+// Stat-driven GAIN layer (v7.12.0): the config + _statGainFactor were ORIGINALLY here,
+// but this is INSIDE the _xRebuildSystem IIFE, so _statGainFactor was invisible to its
+// callers outside the IIFE (growArousal/scanArousal/_applyMasculinityDelta/rebuild-erosion)
+// → ReferenceError when called. v7.12.3's unconditional aiCap call turned that into a
+// per-turn processTurn crash (no state persisted → pills/arousal froze). MOVED to true
+// module scope just below the IIFE close in v7.12.4. (Same trap the END REBUILD
+// INTEGRATION block documents.)
 
 // ────────────────────────────────────────────────────────────────────
 // PILL_RULES (Module 01 data)
@@ -8663,6 +8636,43 @@ return {
 })();
 
 // ─── END REBUILD INTEGRATION ───────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Stat-driven GAIN layer (v7.12.0; relocated to MODULE scope in v7.12.4).
+// Character stats modulate the per-turn accumulation SPEED of each rate mechanic
+// (SEPARATE from the resist GATES, which decide IF a threshold is crossed). This decides
+// HOW FAST the meter fills. MUST live at module scope so growArousal/scanArousal/
+// _applyMasculinityDelta and the effect-erosion hooks (all outside the IIFE) can see
+// _statGainFactor. Uses its own _gainStatMod (the IIFE's getStatMod is not visible here).
+// Spec: engine/STAT_DRIVEN_RATES_SPEC.md. Spread ±30%. Grain model: HIGH stat → LOW rate
+// (slow), +0 mod = base 1.0; bull = affinity (high DOM = fast). Fail-safe → 1.0 on any error.
+// ────────────────────────────────────────────────────────────────────────────────
+const STAT_GAIN_SPREAD = 0.30;
+const _STAT_GAIN_K     = 0.08;
+function _gainStatMod(state, n) {
+  var s = (state && state.stats && state.stats[n] != null) ? state.stats[n] : 10;
+  return Math.floor((s - 10) / 2);
+}
+const _avg2g = (a, b) => (a + b) / 2;
+const STAT_GAIN_CONFIG = {
+  arousal:     { dir: -1, score: s => _gainStatMod(s, 'CON') },
+  masculinity: { dir: -1, score: s => _avg2g(_gainStatMod(s, 'DOM'), _gainStatMod(s, 'WIS')) },
+  breeder:     { dir: -1, score: s => _avg2g(_gainStatMod(s, 'CON'), _gainStatMod(s, 'WIS')) },
+  bimbo:       { dir: -1, score: s => _avg2g(_gainStatMod(s, 'INT'), _gainStatMod(s, 'WIS')) },
+  submissive:  { dir: -1, score: s => _avg2g(_gainStatMod(s, 'DOM'), _gainStatMod(s, 'WIS')) },
+  compliant:   { dir: -1, score: s => _avg2g(_gainStatMod(s, 'WIS'), _gainStatMod(s, 'INT')) },
+  bull:        { dir: +1, score: s => _gainStatMod(s, 'DOM') },   // affinity: dominant char embraces it
+  denial:      { dir: -1, score: s => _avg2g(_gainStatMod(s, 'WIS'), _gainStatMod(s, 'CON')) },
+  surrogate:   { dir: -1, score: s => _avg2g(_gainStatMod(s, 'CON'), _gainStatMod(s, 'WIS')) },
+};
+function _statGainFactor(state, mech) {
+  try {
+    const cfg = STAT_GAIN_CONFIG[mech];
+    if (!cfg || !state || !state.stats) return 1.0;
+    const f = 1.0 + cfg.dir * _STAT_GAIN_K * cfg.score(state);
+    return Math.max(1 - STAT_GAIN_SPREAD, Math.min(1 + STAT_GAIN_SPREAD, f));
+  } catch (e) { return 1.0; }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // v7.7.39 — BREEDER BODY-PULL FRAGMENTS + POST-ORGASM REGISTER
