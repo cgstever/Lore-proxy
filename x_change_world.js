@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.5",
+  "version": "7.12.6",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -4134,8 +4134,12 @@ const LORE_DATA =
     "ai_scan_cap": 3.0,
     "ai_scan_weight": 0.5,
     "session_floor": 18.0,
-    "session_floor_engage": 25.0,
-    "_session_floor_note": "v7.12.5 — once arousal crosses session_floor_engage (25) the scene is 'warmed up' and arousal won't fall below session_floor (18) for the rest of the SESSION (a session ends at the dom's orgasm, which clears _session_floor_active). Stops a plain (no-effect) character dumping to 0 between turns / after the gate fires, so it can re-climb. Effect addiction_floor still wins when higher.",
+    "session_floor_engage": 50.0,
+    "session_floor_con_factor": 1.5,
+    "session_floor_roll": 3,
+    "session_floor_min": 8.0,
+    "session_floor_max": 24.0,
+    "_session_floor_note": "v7.12.6 — once arousal first reaches session_floor_engage (50) the session floor is ROLLED ONCE: floor = round(clamp(session_floor − CON_mod×session_floor_con_factor + randInt(−roll,+roll), min, max)). High CON settles lower, low CON stays warmer; ±session_floor_roll variance. Held (state._session_floor_value) for the rest of the SESSION (the dom's orgasm clears it, re-rolled next session). Stops arousal dumping to 0 after the gate fires / between idle turns, so it re-climbs from the floor not from scratch. Effect addiction_floor still wins when higher.",
     "_ai_scan_note": "v7.12.2 — the character's prose nudges arousal (so a keyword-light suggestive scene doesn't sit at 0) but is hard-capped low: AI hits count at ai_scan_weight (0.5×) and add at most ai_scan_cap (3.0) per turn. {{user}}'s own messages drive the bulk at full weight (scan_cap 8.0). Raise ai_scan_cap for hotter, lower for gentler.",
     "user_action_weights": {
       "tease": 1.5,
@@ -7669,7 +7673,7 @@ function registerClimaxSession(engine, opts) {
   engine.registerHandler('resetSessionCounters', state => {
     state.session_orgasm_count = 0; state.session_fail_count = 0; state.active_side_effects = [];
     state.sessions_completed = (state.sessions_completed || 0) + 1;
-    delete state._session_floor_active;   // v7.12.5 — session over (dom orgasm): release the general arousal floor
+    delete state._session_floor_active; delete state._session_floor_value;   // v7.12.5/6 — session over (dom orgasm): release + re-roll the floor next session
   });
   engine.registerHandler('clearTransientSideEffects', state => {
     delete state._hair_trigger_active; delete state._two_in_chamber_active;
@@ -11326,6 +11330,23 @@ function _isMotherhoodMode(state) {
   return fx.indexOf('surrogate') >= 0;
 }
 
+// v7.12.6 — roll the SESSION arousal floor once per session, modulated by CON. A sturdy body
+// (high CON) settles lower between turns; a sensitive one (low CON) stays warmer. Held for the
+// whole session in state._session_floor_value (cleared at session end). Self-contained
+// (_gainStatMod + randInt are module-scope). Centered on session_floor (~18) ± a small roll.
+function _rollSessionFloor(state, rs) {
+  var as = (rs && rs.arousal_system) || {};
+  var base   = parseFloat(as.session_floor != null ? as.session_floor : 18);
+  var conF   = parseFloat(as.session_floor_con_factor != null ? as.session_floor_con_factor : 1.5);
+  var spread = parseInt(as.session_floor_roll != null ? as.session_floor_roll : 3, 10);   // ± this
+  var lo     = parseFloat(as.session_floor_min != null ? as.session_floor_min : 8);
+  var hi     = parseFloat(as.session_floor_max != null ? as.session_floor_max : 24);
+  var conMod = (typeof _gainStatMod === 'function') ? _gainStatMod(state, 'CON') : 0;
+  var roll   = (typeof randInt === 'function') ? (randInt(0, 2 * spread) - spread) : 0;
+  var v = base - conMod * conF + roll;   // high CON → lower floor
+  return Math.round(Math.max(lo, Math.min(hi, v)));
+}
+
 function getArousalFloor(state, rs) {
   const em = rs.effect_mechanics || {};
   let floor = 0.0;
@@ -11349,7 +11370,9 @@ function getArousalFloor(state, rs) {
   // clears the flag in resetSessionCounters). Stops a plain character dumping back to 0 between
   // turns so it can re-climb toward the orgasm gate. Effect (addiction) floors still win if higher.
   if (state._session_floor_active) {
-    floor = Math.max(floor, parseFloat(rs.arousal_system?.session_floor || 18));
+    var _sf = (state._session_floor_value != null) ? parseFloat(state._session_floor_value)
+              : parseFloat(rs.arousal_system?.session_floor || 18);
+    floor = Math.max(floor, _sf);
   }
   return floor;
 }
@@ -11359,9 +11382,12 @@ function setArousal(state, value, rs) {
   const mx = parseFloat(rs.arousal_system?.max || 60);
   const v = Math.round(Math.max(floor, Math.min(mx, parseFloat(value))) * 100) / 100;
   state.arousal = v;
-  // v7.12.5 — engage the general session floor once arousal clearly warms up. Held for the rest
-  // of the session; cleared at the dom's orgasm (session end). Per Cody: floor ~15–20.
-  if (v >= parseFloat(rs.arousal_system?.session_floor_engage || 25)) state._session_floor_active = true;
+  // v7.12.5/6 — once arousal first reaches session_floor_engage (50), roll the CON-based session
+  // floor ONCE and hold it for the rest of the session (cleared at the dom's orgasm = session end).
+  if (v >= parseFloat(rs.arousal_system?.session_floor_engage || 50)) {
+    state._session_floor_active = true;
+    if (state._session_floor_value == null) state._session_floor_value = _rollSessionFloor(state, rs);
+  }
 }
 
 function growArousal(state, weight, rs) {
@@ -18267,7 +18293,7 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     delete state._side_fx_arousal_floor_bonus;
     delete state._excitable_ovaries_bonus;
     delete state._session_end_pending;
-    delete state._session_floor_active;   // v7.12.5 — release the general arousal floor at session end
+    delete state._session_floor_active; delete state._session_floor_value;   // v7.12.5/6 — release + re-roll the floor at session end
     // Reset effect resistance DCs + global fail pressure (resistance value persists)
     _resetEffectResistDCs(state);
     console.log('[SESSION] Session counters + side effects reset (male orgasm previous turn)');
