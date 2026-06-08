@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.11.1",
+  "version": "7.12.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -2931,7 +2931,8 @@ const LORE_DATA =
     "psyche": {
       "trigger": "session_start",
       "roll": [
-        "WIS_mod"
+        "WIS_mod",
+        "INT_mod"
       ],
       "start_dc": 14,
       "escalation": 2,
@@ -7101,6 +7102,41 @@ const EFFECT_DC_COUNTER_STAT = {bimbo:'CHA',breeder:'SUB',submissive:'SUB',compl
 function effectCounterStat(e) { return EFFECT_DC_COUNTER_STAT[e] || 'CHA'; }
 
 // ────────────────────────────────────────────────────────────────────
+// Stat-driven GAIN layer (v7.12.0) — character stats modulate the per-turn
+// accumulation SPEED of each rate mechanic. This is SEPARATE from the resist
+// GATES (which already use stats): gates decide IF a threshold is crossed,
+// this decides HOW FAST the meter fills. Central + tunable: one config, one fn.
+// Spec: engine/STAT_DRIVEN_RATES_SPEC.md. Spread ±30% (Cody, 2026-06-07).
+// ────────────────────────────────────────────────────────────────────
+const STAT_GAIN_SPREAD = 0.30;   // max ± deviation from 1.0 (hard clamp)
+const _STAT_GAIN_K     = 0.08;   // factor delta per stat-mod point
+const _avg2 = (a, b) => (a + b) / 2;
+// UNIFORM RULE (Cody 2026-06-07): HIGH stat → LOW rate (slow), LOW stat → HIGH rate (fast).
+// stat-mod +0 (average stat 10) = BASE: factor 1.0, no change. All dir:-1 (resistance).
+// Multi-stat mechanics AVERAGE their resist pair so the ±spread matches single-stat ones.
+const STAT_GAIN_CONFIG = {
+  arousal:     { dir: -1, score: s => getStatMod(s, 'CON') },                                    // sturdy body resists heat-up
+  masculinity: { dir: -1, score: s => _avg2(getStatMod(s, 'DOM'), getStatMod(s, 'WIS')) },       // dominance+will → clings to identity
+  breeder:     { dir: -1, score: s => _avg2(getStatMod(s, 'CON'), getStatMod(s, 'WIS')) },        // resist pair
+  bimbo:       { dir: -1, score: s => _avg2(getStatMod(s, 'INT'), getStatMod(s, 'WIS')) },        // sharp+composed (low INT → spirals)
+  submissive:  { dir: -1, score: s => _avg2(getStatMod(s, 'DOM'), getStatMod(s, 'WIS')) },        // resist pair
+  compliant:   { dir: -1, score: s => _avg2(getStatMod(s, 'WIS'), getStatMod(s, 'INT')) },        // resist pair
+  bull:        { dir: +1, score: s => getStatMod(s, 'DOM') },                                     // AFFINITY (not resistance): a dominant char EMBRACES the bull role → high DOM = FAST
+  denial:      { dir: -1, score: s => _avg2(getStatMod(s, 'WIS'), getStatMod(s, 'CON')) },        // resist pair
+  surrogate:   { dir: -1, score: s => _avg2(getStatMod(s, 'CON'), getStatMod(s, 'WIS')) },        // = breeder fork
+};
+// Returns a clamped multiplier in [1-SPREAD, 1+SPREAD]. Fail-safe: any problem → 1.0
+// (no change), so this can never throw inside a turn.
+function _statGainFactor(state, mech) {
+  try {
+    const cfg = STAT_GAIN_CONFIG[mech];
+    if (!cfg || !state || !state.stats) return 1.0;
+    const f = 1.0 + cfg.dir * _STAT_GAIN_K * cfg.score(state);
+    return Math.max(1 - STAT_GAIN_SPREAD, Math.min(1 + STAT_GAIN_SPREAD, f));
+  } catch (e) { return 1.0; }
+}
+
+// ────────────────────────────────────────────────────────────────────
 // PILL_RULES (Module 01 data)
 // ────────────────────────────────────────────────────────────────────
 
@@ -8213,7 +8249,7 @@ function _processEffectResist(state, eff, rollD100, engine) {
     if (ns % 3 === 0) state._effect_resist_streak_bonus[eff] = sb + 2;
     return 'resist';
   } else {
-    applyResistanceDelta(state, eff, -10);
+    applyResistanceDelta(state, eff, -10 * _statGainFactor(state, eff));   // v7.12.0 stat-gain: erosion bite size
     state._effect_resist_streak_count[eff] = 0;
     state._effect_resist_streak_bonus[eff] = 0;
     return 'erode';
@@ -9496,6 +9532,11 @@ function _nextMascBoundary(current, delta) {
 function _applyMasculinityDelta(state, delta) {
   if (delta === 0) return;
 
+  // v7.12.0 stat-gain: scale the swing MAGNITUDE (high SUB / low DOM feminizes faster).
+  // Sign preserved; gates (DOM+WIS band rolls below) untouched.
+  delta = Math.round(delta * _statGainFactor(state, 'masculinity'));
+  if (delta === 0) return;
+
   const current = parseInt(state.masculinity != null ? state.masculinity : 50, 10);
   const target = Math.max(0, Math.min(100, current + delta));
   if (target === current) return;
@@ -9927,7 +9968,7 @@ function _processEffectResistance(state, events, rs) {
     // ── Failed both rolls — apply arousal-scaled drop through boundary walk ──
     if (!state._effect_resist_fail_count || typeof state._effect_resist_fail_count !== 'object') state._effect_resist_fail_count = {};
     state._effect_resist_fail_count[eff] = (state._effect_resist_fail_count[eff] || 0) + 1;
-    _applyEffectResistanceDelta(state, eff, dropAmount);
+    _applyEffectResistanceDelta(state, eff, dropAmount * _statGainFactor(state, eff));   // v7.12.0 stat-gain: erosion bite size
   }
 }
 
@@ -11295,6 +11336,7 @@ function setArousal(state, value, rs) {
 }
 
 function growArousal(state, weight, rs) {
+  weight = weight * _statGainFactor(state, 'arousal');   // v7.12.0 stat-gain: CON scales heat-up speed
   const TIER_SIZE = 5;
   const scale = _arousalScale(rs);
   const current = getArousal(state);
