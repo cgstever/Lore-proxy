@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.0",
+  "version": "7.12.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -16398,6 +16398,22 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
                   ? _buildOutfitDirectiveLine(state) : '';
       if (_ofline) state._priority_directive_this_turn += '\n' + _ofline;
     }
+    // v7.12.1 — voice-lock. On a TX / antidote transformation, the big body-directive at the
+    // after-last-user slot (the last thing before generation) out-shouts the <voice> anchor
+    // sitting back in the system prompt, and the model slides into flat transformation-narration
+    // (it parrots the guide's own clinical language). Re-assert the voice at the END of the
+    // directive — the strongest position — so the BODY changes but the person narrating does not.
+    // Validated A/B on the real Paul TX prompt: 2/6 → 6/6 in-voice. Reinforce-only.
+    if (state._priority_directive_this_turn && state._voice_anchor
+        && (_isTxTurn || state._antidote_revert_this_turn)) {
+      var _vName = state._card_name || 'this character';
+      state._priority_directive_this_turn += '\n\n<voice-lock>\n'
+        + String(state._voice_anchor).trim() + '\n\n'
+        + 'ALL of the transformation above is the BODY changing. Narrate every beat of it in '
+        + _vName + "'s exact voice and personality — first person, same attitude, slang, and humor "
+        + 'as the voice above. The body changes; the person speaking does NOT become a flat narrator. '
+        + 'Stay fully in voice.\n</voice-lock>';
+    }
   }
 
   // ── Markdown sections ──
@@ -18413,7 +18429,7 @@ function processTurn({systemText, messages, state, personaState, config, charNam
 
   // ── Message condenser: dedup older messages into narrative beats,
   //    scrub body-catalog terms from recent assistant messages ──
-  var _recentCount = state._pill_descriptor_this_turn ? 1 : 3;
+  var _recentCount = state._pill_descriptor_this_turn ? 1 : 5;   // v7.12.1 — 3→5: more recent in-voice context helps the voice hold around/after a TX (TX turn itself stays collapsed at 1)
   var _allChat = (scrubResult.didScrub ? scrubResult.messages : messages || [])
     .filter(function(m) { return m && (m.role === 'user' || m.role === 'assistant'); });
   var _keepCount = _recentCount * 2;
@@ -18440,6 +18456,15 @@ function processTurn({systemText, messages, state, personaState, config, charNam
 
   console.log('[CONDENSER] older=' + _olderMsgs.length + ' recent=' + _recentMsgs.length +
     ' summary=' + _condensedSummary.length + 'ch scrubbedRecent=' + _scrubbedRecent.length);
+
+  // v7.12.1 — gain-profile readout: surface each character's per-mechanic stat-gain factor so the
+  // stat-driven rate layer is visible/tunable in the logs (pull via `_pull_logs.py --log`).
+  try {
+    if (typeof STAT_GAIN_CONFIG === 'object' && state && state.stats) {
+      var _gp = Object.keys(STAT_GAIN_CONFIG).map(function (_m) { return _m + '×' + _statGainFactor(state, _m).toFixed(2); }).join(' ');
+      console.log('[STATGAIN] ' + name + ': ' + _gp);
+    }
+  } catch (e) {}
 
   console.log('[XCW] Return: turn=' + state.turn + ' header=' + header.length + 'ch brief=' + brief.length + 'ch events=' + Object.keys(events).join(',') + ' inject=' + _injectArr.length + ' hardRules=' + (state._hardRules ? state._hardRules.length : 0) + ' beats=' + (state.storyBeats || []).length);
 
@@ -18470,7 +18495,7 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     // Phase 1: Story Beat Tracker additions (kept for state tracking)
     storySummary: _storySummary,
     // v6.5.213: include _deferred_tx_archive so deferred TX first-gen also gets priority
-    recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive || state._scene_jump_this_turn || state._antidote_revert_this_turn) ? 1 : 3,
+    recentMessageCount: (state._pill_descriptor_this_turn || state._deferred_tx_archive || state._scene_jump_this_turn || state._antidote_revert_this_turn) ? 1 : 5,   // v7.12.1 — 3→5 (priority/TX turns still collapse to 1)
     // v7.9.2 — a scene-jump turn is ALSO a priority turn: the extension only appends
     // priorityDirective when priorityInjection is true (or recentMessageCount===1), so
     // without this the <scene-jump> block was built but never injected into the prompt.
