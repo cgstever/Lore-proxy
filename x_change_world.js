@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.1",
+  "version": "7.12.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -4131,6 +4131,9 @@ const LORE_DATA =
       "surrogate"
     ],
     "scan_cap": 8.0,
+    "ai_scan_cap": 3.0,
+    "ai_scan_weight": 0.5,
+    "_ai_scan_note": "v7.12.2 — the character's prose nudges arousal (so a keyword-light suggestive scene doesn't sit at 0) but is hard-capped low: AI hits count at ai_scan_weight (0.5×) and add at most ai_scan_cap (3.0) per turn. {{user}}'s own messages drive the bulk at full weight (scan_cap 8.0). Raise ai_scan_cap for hotter, lower for gentler.",
     "user_action_weights": {
       "tease": 1.5,
       "teasing": 1.5,
@@ -11753,6 +11756,10 @@ function scanArousal(messagesRecent, state, rs, debug) {
   let gained = 0.0;
   const hits = [];
   const actionKw = rs.arousal_action_kw || [];
+  // v7.12.2 — middle ground for the AI-prose scan (see the assistant branch below)
+  const aiCap = parseFloat(rs.arousal_system?.ai_scan_cap || 3.0);        // AI prose adds at most this/turn
+  const aiWeight = parseFloat(rs.arousal_system?.ai_scan_weight || 0.5);  // AI hits count at reduced weight
+  let aiGained = 0.0;
 
   for (const msg of messagesRecent) {
     const text = msg.content || '';
@@ -11783,6 +11790,25 @@ function scanArousal(messagesRecent, state, rs, debug) {
           growArousal(state, weight, rs);
           gained += getArousal(state) - before;
           hits.push(pat.source + '[act+' + weight + ']');
+        }
+      }
+    }
+
+    // v7.12.2 — MIDDLE GROUND: scan the CHARACTER's prose again, but HARD-CAPPED low.
+    // v7.11.1 (user-only) left arousal frozen at 0 when {{user}}'s dialogue is suggestive
+    // but keyword-light ("you want my cock?") while the AI clearly narrates the character
+    // getting worked up (trembling, breath hitching). Re-include the AI side at reduced
+    // weight + a small SEPARATE cap so the character "feels" things and nudges the meter,
+    // WITHOUT the old runaway (a hot AI paragraph used to add +14; now ≤ ~aiCap). {{user}}'s
+    // actions still drive the bulk (full weight above). aiCap/aiWeight are the tuning dials.
+    if (role === 'assistant') {
+      for (const [weight, pat] of rs.arousal_kw || []) {
+        if (pat.test(text) && aiGained < aiCap) {
+          const before = getArousal(state);
+          growArousal(state, weight * aiWeight, rs);
+          const got = getArousal(state) - before;
+          aiGained += got;
+          hits.push(pat.source + '(ai+' + (Math.round(got * 10) / 10) + ')');
         }
       }
     }
