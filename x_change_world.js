@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.2",
+  "version": "7.12.3",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -11757,7 +11757,10 @@ function scanArousal(messagesRecent, state, rs, debug) {
   const hits = [];
   const actionKw = rs.arousal_action_kw || [];
   // v7.12.2 — middle ground for the AI-prose scan (see the assistant branch below)
-  const aiCap = parseFloat(rs.arousal_system?.ai_scan_cap || 3.0);        // AI prose adds at most this/turn
+  // v7.12.3 — the cap SCALES with the character's arousal stat factor (CON): a sensitive char
+  // (low CON, factor >1) lets the scene move them more; a sturdy one (high CON, factor <1) less.
+  // _statGainFactor is fail-safe (×1.0 with no stats), so the base cap still applies as a floor.
+  const aiCap = parseFloat(rs.arousal_system?.ai_scan_cap || 3.0) * _statGainFactor(state, 'arousal');
   const aiWeight = parseFloat(rs.arousal_system?.ai_scan_weight || 0.5);  // AI hits count at reduced weight
   let aiGained = 0.0;
 
