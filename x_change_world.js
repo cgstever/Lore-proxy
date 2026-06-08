@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.4",
+  "version": "7.12.5",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -4133,6 +4133,9 @@ const LORE_DATA =
     "scan_cap": 8.0,
     "ai_scan_cap": 3.0,
     "ai_scan_weight": 0.5,
+    "session_floor": 18.0,
+    "session_floor_engage": 25.0,
+    "_session_floor_note": "v7.12.5 — once arousal crosses session_floor_engage (25) the scene is 'warmed up' and arousal won't fall below session_floor (18) for the rest of the SESSION (a session ends at the dom's orgasm, which clears _session_floor_active). Stops a plain (no-effect) character dumping to 0 between turns / after the gate fires, so it can re-climb. Effect addiction_floor still wins when higher.",
     "_ai_scan_note": "v7.12.2 — the character's prose nudges arousal (so a keyword-light suggestive scene doesn't sit at 0) but is hard-capped low: AI hits count at ai_scan_weight (0.5×) and add at most ai_scan_cap (3.0) per turn. {{user}}'s own messages drive the bulk at full weight (scan_cap 8.0). Raise ai_scan_cap for hotter, lower for gentler.",
     "user_action_weights": {
       "tease": 1.5,
@@ -7666,6 +7669,7 @@ function registerClimaxSession(engine, opts) {
   engine.registerHandler('resetSessionCounters', state => {
     state.session_orgasm_count = 0; state.session_fail_count = 0; state.active_side_effects = [];
     state.sessions_completed = (state.sessions_completed || 0) + 1;
+    delete state._session_floor_active;   // v7.12.5 — session over (dom orgasm): release the general arousal floor
   });
   engine.registerHandler('clearTransientSideEffects', state => {
     delete state._hair_trigger_active; delete state._two_in_chamber_active;
@@ -11339,13 +11343,25 @@ function getArousalFloor(state, rs) {
   // Surrogate post-birth recovery — floor tapers down as the body winds down
   const reduction = parseFloat((state.flags || {})._surrogate_recovery_floor_reduction || 0);
   if (reduction > 0) floor = Math.max(0, floor - reduction);
+  // v7.12.5 — GENERAL SESSION FLOOR. Once the scene has clearly warmed up
+  // (`_session_floor_active`, set in setArousal when arousal crosses the engage threshold),
+  // arousal holds at this floor for ALL characters until the session ends (the dom's orgasm
+  // clears the flag in resetSessionCounters). Stops a plain character dumping back to 0 between
+  // turns so it can re-climb toward the orgasm gate. Effect (addiction) floors still win if higher.
+  if (state._session_floor_active) {
+    floor = Math.max(floor, parseFloat(rs.arousal_system?.session_floor || 18));
+  }
   return floor;
 }
 
 function setArousal(state, value, rs) {
   const floor = getArousalFloor(state, rs);
   const mx = parseFloat(rs.arousal_system?.max || 60);
-  state.arousal = Math.round(Math.max(floor, Math.min(mx, parseFloat(value))) * 100) / 100;
+  const v = Math.round(Math.max(floor, Math.min(mx, parseFloat(value))) * 100) / 100;
+  state.arousal = v;
+  // v7.12.5 — engage the general session floor once arousal clearly warms up. Held for the rest
+  // of the session; cleared at the dom's orgasm (session end). Per Cody: floor ~15–20.
+  if (v >= parseFloat(rs.arousal_system?.session_floor_engage || 25)) state._session_floor_active = true;
 }
 
 function growArousal(state, weight, rs) {
@@ -16178,6 +16194,20 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   if (state._tx_summary && !_isTxTurn) {
     _softRules.push('The physical transformation is FINISHED — it happened in a prior turn. Do not re-describe it happening. Write the character reacting in the PRESENT moment, not re-experiencing the change.');
   }
+
+  // v7.12.5 — GENERAL ORGASM LOCK. The engine already owns the climax decision every turn
+  // (_checkOrgasmTrigger: no orgasm below arousal 80, probabilistic above, denial/breeder rules
+  // respected) and stamps it on state._org_trigger_result. Surface that to the model as a hard
+  // rule so it STOPS writing climaxes the engine never fired (e.g. "she came" at arousal 3).
+  // Effect-driven climaxes (breeder creampie) are already announced by the unlockedEffects
+  // "MUST orgasm" text above, so only add a CLIMAX line for a plain arousal-gate orgasm.
+  var _orgFired = !!(state._org_trigger_result && state._org_trigger_result.orgasm);
+  if (!_orgFired) {
+    _hardRuleTexts.push('NO CLIMAX: ' + name + ' does NOT orgasm, cum, or finish this response — no matter how intense it gets. They build, ache, clench, leak, tremble, beg — but the peak does NOT arrive and is never written. The engine decides when release happens; it is not happening this turn.');
+  } else if (unlockedEffects.size === 0) {
+    _hardRuleTexts.push('CLIMAX: ' + name + ' reaches orgasm THIS response — the build finally tips over. Write the release fully and in their voice.');
+  }
+
   state._hardRules = _hardRuleTexts.length > 0 ? _hardRuleTexts : null;
 
   // ── <state> block (flavor + identity + resistance + bimbo) ──
@@ -18237,6 +18267,7 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     delete state._side_fx_arousal_floor_bonus;
     delete state._excitable_ovaries_bonus;
     delete state._session_end_pending;
+    delete state._session_floor_active;   // v7.12.5 — release the general arousal floor at session end
     // Reset effect resistance DCs + global fail pressure (resistance value persists)
     _resetEffectResistDCs(state);
     console.log('[SESSION] Session counters + side effects reset (male orgasm previous turn)');
