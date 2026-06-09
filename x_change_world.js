@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.4",
+  "version": "7.13.5",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -11906,6 +11906,36 @@ function _detectActTier(action) {
   return 0;
 }
 
+// v7.13.5 — name-change detection. {{user}} OR the character can rename her ("call me Mia",
+// "your name is Mia now", "my name is Mia", "she goes by Mia"); the engine then adopts the new
+// name in everything it controls (the <character> block, hard rules, state block, HUD) plus a
+// one-time directive. The captured token MUST be a single Capitalized word and NOT a common
+// honorific / term of address / filler — that stoplist is what keeps "call me Master",
+// "call me crazy", "call me baby", "call you later" from hijacking the name.
+const _RENAME_STOP = new Set(['master','mistress','sir','maam','madam','miss','mommy','mommie','momma','mom','mother','daddy','dad','papa','father','baby','babe','bae','honey','sweetie','sweetheart','darling','dear','love','lover','princess','queen','goddess','angel','doll','dolly','kitten','slut','whore','bitch','cunt','pet','toy','girl','boy','good','bad','crazy','stupid','later','back','up','down','now','mine','yours','hers','his','ours','it','that','this','here','there','anything','everything','nothing','whatever','someone','anyone','me','you','us','them','sis','sissy','bro','brother','ready','sorry','fine','okay','sure','done','home','tonight','today','again','enough','more','please','yes','no']);
+function _detectRename(text) {
+  if (!text || typeof text !== 'string') return null;
+  var N = '([A-Za-z][a-z]{1,13})';
+  var pats = [
+    new RegExp('\\bcall (?:you|her|me|yourself) ' + N + '\\b', 'i'),
+    new RegExp('\\byour (?:new )?name (?:is now|is gonna be|is going to be|will be|shall be|is|’s|\'s) ' + N + '\\b', 'i'),
+    new RegExp('\\b(?:i(?:\'?ll| will| shall)? )?(?:re)?name (?:you|her) ' + N + '\\b', 'i'),
+    new RegExp('\\bmy (?:new )?name(?:\'?s| is) ' + N + '\\b', 'i'),
+    new RegExp('\\byou can call me ' + N + '\\b', 'i'),
+    new RegExp('\\bi(?:\'?ll)? go by ' + N + '\\b', 'i'),
+    new RegExp('\\b(?:she|he|they) (?:now )?goes? by ' + N + '\\b', 'i'),
+  ];
+  for (var i = 0; i < pats.length; i++) {
+    var m = pats[i].exec(text);
+    if (!m || !m[1]) continue;
+    var nm = m[1], c0 = nm.charCodeAt(0);
+    if (c0 >= 65 && c0 <= 90 && !_RENAME_STOP.has(nm.toLowerCase())) {     // Capitalized in prose + not a stopword
+      return nm.charAt(0).toUpperCase() + nm.slice(1).toLowerCase();      // normalize → "Mia"
+    }
+  }
+  return null;
+}
+
 function scanArousal(messagesRecent, state, rs, debug) {
   const as = rs.arousal_system || {};
   const ap = as.act_phases || {};
@@ -16089,6 +16119,9 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   // wrapper. Routed via systemPrompt field so engine is sole source of
   // truth; ST sysMsg is filtered out by the extension (v2.0.0).
 
+  // v7.13.5 — adopt the chosen (post-rename) name everywhere this header touches: the <character>
+  // tag, the hard rules, the <state> block. _card_name keeps the ORIGINAL card name.
+  if (state && state._chosen_name) name = state._chosen_name;
   var effSex   = currentSex(state, cardSex, rs);
   var charName = name || 'the character';
   // v7.0.1: prefer personaName (ctx.name1) over hardcoded 'Persona' literal
@@ -16317,6 +16350,11 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     _hardRuleTexts.push('NO CLIMAX: ' + name + ' does NOT orgasm, cum, or finish this response — no matter how intense it gets. They build, ache, clench, leak, tremble, beg — but the peak does NOT arrive and is never written. The engine decides when release happens; it is not happening this turn.');
   } else if (unlockedEffects.size === 0) {
     _hardRuleTexts.push('CLIMAX: ' + name + ' reaches orgasm THIS response — the build finally tips over. Write the release fully and in their voice.');
+  }
+
+  // v7.13.5 — one-time rename directive (fires only the turn the name actually changes).
+  if (state && state._renamed_this_turn) {
+    _hardRuleTexts.push('NAME CHANGE: she now goes by ' + name + '. Use "' + name + '" for her throughout this and every future response — her previous name no longer applies. Have her recognize and answer to ' + name + '.');
   }
 
   state._hardRules = _hardRuleTexts.length > 0 ? _hardRuleTexts : null;
@@ -18362,6 +18400,28 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   state._card_sex = sex;
   state._card_name = name;
 
+  // v7.13.5 — name-change detection: {{user}} OR the character can rename her; engine adopts it
+  // immediately. _card_name stays the ORIGINAL (card) name; _chosen_name is the live override that
+  // buildHeader + the HUD use. _renamed_this_turn fires the one-time "use this name" directive only
+  // when the name actually CHANGES (so re-reading the same line next turn doesn't re-fire).
+  delete state._renamed_this_turn;
+  if (!rs.name_change || rs.name_change.enabled !== false) {
+    try {
+      var _rnMsgs = (messages || []).slice(-2);
+      for (var _rni = _rnMsgs.length - 1; _rni >= 0; _rni--) {
+        var _rnm = _rnMsgs[_rni];
+        if (!_rnm || (_rnm.role !== 'user' && _rnm.role !== 'assistant')) continue;
+        var _newName = _detectRename(_rnm.content || '');
+        if (_newName && _newName !== name && _newName !== state._chosen_name) {
+          state._chosen_name = _newName;
+          state._renamed_this_turn = _newName;
+          console.log('[NAME] ' + name + ' → ' + _newName + ' (renamed by ' + _rnm.role + ')');
+          break;
+        }
+      }
+    } catch (_rne) {}
+  }
+
   // Extract age from card (only on first turn or if not already set)
   if (!state._card_age) {
     var cardAge = extractCardAge(systemText, rs);
@@ -18576,14 +18636,24 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     }
   }
 
-  // v7.13.1 — pregnancy state invariant: a CONFIRMED pregnancy must always carry a conception
-  // turn + a gestation clock, no matter which engine (rebuild vs legacy) rolled it. The legacy
-  // conception path sets _conception_turn but not the clock; the rebuild path sets the clock.
-  // Without this, a legacy-rolled pregnancy could sit pregnancy_confirmed=true with no _due_week
-  // (never auto-births until a time-skip migrates it) and motherhood mode could never engage.
-  // Mirrors applyTimeSkip's migration seed (stage→weeks) + the 38–42 due-week roll. Runs before
-  // buildHeader so _isMotherhoodMode reads a fully-seeded pregnancy this same turn.
-  if ((state.flags && state.flags.pregnancy_confirmed) || (state.pregnancy && state.pregnancy.confirmed)) {
+  // v7.13.5 — pregnancy state invariant + RECOVERY. If conception happened on ANY path, the full
+  // pregnancy state must exist. `_conception_turn` is set ONLY when a conception roll succeeds
+  // (legacy 13614 or rebuild 7849), so it is proof she conceived. THE BUG (live, Paul chat):
+  // the legacy conception sets state.flags.pregnancy_confirmed=true, but the rebuild copy-back
+  // OWNS that flag and evaluates from the PRE-legacy snapshot (where it's false) — so if the
+  // rebuild's own conception roll didn't also fire, the copy-back STOMPS the flag back to false,
+  // leaving `_conception_turn` set but pregnancy_confirmed false → "conceived twice, not pregnant."
+  // Runs after the copy-back, so restore the flag (+ clock) here. Birth clears _conception_turn
+  // (7905), so this never resurrects a delivered pregnancy. Mirrors applyTimeSkip's stage→weeks
+  // seed + the 38–42 due-week roll; runs before buildHeader so motherhood mode sees it same turn.
+  var _conceived = !!((state.flags && state.flags.pregnancy_confirmed)
+                   || (state.pregnancy && state.pregnancy.confirmed)
+                   || (state._conception_turn != null));
+  if (_conceived) {
+    if (!state.flags) state.flags = {};
+    state.flags.pregnancy_confirmed = true;                 // recover the flag the copy-back reverted
+    if (!state.pregnancy) state.pregnancy = {};
+    state.pregnancy.confirmed = true;
     if (state._conception_turn == null) state._conception_turn = (state.turn != null ? state.turn : 0);
     if (state._due_week == null) state._due_week = randInt(38, 42);
     if (state._gestation_weeks == null) {
@@ -19308,7 +19378,7 @@ function buildXcwHudHtml(state, rs) {
   var mascLabel = typeof _masculinityBandLabel === 'function' ? _masculinityBandLabel(masc) : '';
   var mascColor = _xcwMascColor(masc);
   var effects = s.active_effects || [];
-  var name = s._card_name || 'Character';
+  var name = s._chosen_name || s._card_name || 'Character';   // v7.13.5 — HUD shows the chosen (post-rename) name
   var cardSex = s._card_sex || '?';
   var effSex = typeof currentSex === 'function' ? currentSex(s, cardSex, rs) : cardSex;
   var turn = parseInt(s.turn || 0, 10);
@@ -19801,7 +19871,7 @@ function getDebugInfo(state, events, config, personaState) {
     }
   }
 
-  const name = s._card_name || '?';
+  const name = s._chosen_name || s._card_name || '?';   // v7.13.5 — HUD shows the chosen (post-rename) name
   const cardSex = s._card_sex || '?';
   const effSex = typeof currentSex === 'function' ? currentSex(s, cardSex, rs) : cardSex;
   const ar = getArousal(s);
