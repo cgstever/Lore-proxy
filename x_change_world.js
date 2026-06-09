@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.1",
+  "version": "7.13.2",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -4213,7 +4213,7 @@ const LORE_DATA =
           "height": "4'11\"-5'2\"",
           "weight": "95-115lbs",
           "build": "delicate slim frame, narrow shoulders",
-          "bust": "A-C cup, proportional to frame",
+          "bust": "B-DD cup, proportional to frame",
           "hips": "narrow to moderate, feminine curve",
           "note": "Small everywhere. Nothing oversized. Natural petite proportions."
         },
@@ -4221,7 +4221,7 @@ const LORE_DATA =
           "height": "5'3\"-5'6\"",
           "weight": "110-130lbs",
           "build": "lean toned, light muscle definition",
-          "bust": "B-C cup",
+          "bust": "B-D cup",
           "hips": "moderate, defined waist",
           "note": "Athletic lean look without bulk."
         },
@@ -4229,7 +4229,7 @@ const LORE_DATA =
           "height": "5'4\"-5'7\"",
           "weight": "120-145lbs",
           "build": "natural balanced proportions",
-          "bust": "C-D cup",
+          "bust": "C-E cup",
           "hips": "moderate, natural curve",
           "note": "Default natural female proportions."
         },
@@ -4237,7 +4237,7 @@ const LORE_DATA =
           "height": "5'4\"-5'7\"",
           "weight": "130-155lbs",
           "build": "full figure, defined waist, soft",
-          "bust": "C-D cup",
+          "bust": "D-E cup",
           "hips": "full, pronounced hourglass",
           "note": "Defined curves, everything proportional to each other."
         },
@@ -4245,7 +4245,7 @@ const LORE_DATA =
           "height": "5'4\"-5'8\"",
           "weight": "125-150lbs",
           "build": "average frame, chest prominent",
-          "bust": "D-E cup, proportional support",
+          "bust": "D-F cup, proportional support",
           "hips": "moderate-full to balance chest",
           "note": "Larger chest but frame and hips must support it naturally."
         },
@@ -4253,7 +4253,7 @@ const LORE_DATA =
           "height": "5'5\"-5'8\"",
           "weight": "125-145lbs",
           "build": "toned muscle, strong legs, flat stomach",
-          "bust": "B-C cup, firm",
+          "bust": "B-D cup, firm",
           "hips": "athletic, toned",
           "note": "Strong and capable looking. Not bulky."
         },
@@ -4261,21 +4261,21 @@ const LORE_DATA =
           "height": "5'5\"-5'8\"",
           "weight": "140-165lbs",
           "build": "full everywhere, soft rounded, deep curves",
-          "bust": "DD-F cup",
+          "bust": "DD-G cup",
           "hips": "very full, deep hourglass",
           "note": "Everything full and rounded but proportional. No single feature extreme."
         },
         "bimbo_overlay": {
           "note": "Stacks on top of any base modifier when bimbo or pinup is in the pill descriptor. Overrides bust, hips, and waist. Height and weight remain from base modifier.",
           "bust_override": {
-            "petite": "D-DD cup",
-            "slim": "D-DD cup",
-            "athletic": "D-DD cup",
-            "average": "DD-E cup",
-            "curvy": "DD-E cup",
-            "busty": "E-F cup",
-            "voluptuous": "F-G cup",
-            "_default": "DD-E cup"
+            "petite": "DD-F cup",
+            "slim": "DD-F cup",
+            "athletic": "DD-F cup",
+            "average": "E-G cup",
+            "curvy": "E-G cup",
+            "busty": "F-G cup",
+            "voluptuous": "G-H cup",
+            "_default": "E-G cup"
           },
           "hips_override": "exaggerated, extreme hip-to-waist ratio",
           "waist_override": "narrow, exaggerated hourglass",
@@ -4285,26 +4285,16 @@ const LORE_DATA =
           "note": "Applies whenever surrogate effect is active. Pre-conception mirrors bimbo_overlay bust scale. Pregnancy stages progressively enlarge chest. Waist NOT narrowed — pregnancy thickens the midsection, opposite of the bimbo silhouette.",
           "bust_override": {
             "pre": {
-              "petite": "D-DD cup",
-              "slim": "D-DD cup",
-              "athletic": "D-DD cup",
-              "average": "DD-E cup",
-              "curvy": "DD-E cup",
-              "busty": "E-F cup",
-              "voluptuous": "F-G cup",
-              "_default": "DD-E cup"
-            },
-            "early": {
-              "petite": "DD-E cup",
-              "slim": "DD-E cup",
-              "athletic": "DD-E cup",
-              "average": "E-F cup",
-              "curvy": "E-F cup",
+              "petite": "DD-F cup",
+              "slim": "DD-F cup",
+              "athletic": "DD-F cup",
+              "average": "E-G cup",
+              "curvy": "E-G cup",
               "busty": "F-G cup",
               "voluptuous": "G-H cup",
-              "_default": "E-F cup"
+              "_default": "E-G cup"
             },
-            "showing": {
+            "early": {
               "petite": "E-F cup",
               "slim": "E-F cup",
               "athletic": "E-F cup",
@@ -4314,7 +4304,7 @@ const LORE_DATA =
               "voluptuous": "H-J cup",
               "_default": "F-G cup"
             },
-            "late": {
+            "showing": {
               "petite": "F-G cup",
               "slim": "F-G cup",
               "athletic": "F-G cup",
@@ -4323,6 +4313,16 @@ const LORE_DATA =
               "busty": "H-J cup",
               "voluptuous": "J-K cup",
               "_default": "G-H cup"
+            },
+            "late": {
+              "petite": "G-H cup",
+              "slim": "G-H cup",
+              "athletic": "G-H cup",
+              "average": "H-J cup",
+              "curvy": "H-J cup",
+              "busty": "J-K cup",
+              "voluptuous": "K-L cup",
+              "_default": "H-J cup"
             }
           },
           "hips_override": "full, childbearing-wide, set to carry weight",
@@ -4713,7 +4713,8 @@ const LORE_DATA =
       "busty",
       "athletic",
       "voluptuous",
-      "stocky"
+      "stocky",
+      "slender"
     ],
     "no_modifier_rule": "Use baseline_from_card rules to scale body from character description",
     "transformation_narration_order": [
@@ -7259,6 +7260,7 @@ function detectPillDescriptor(text, engine) {
   if (fe.includes('bimbo') && fe.includes('pinup')) fe = fe.filter(x => x !== 'pinup');
   let fm = null;
   for (const m of BODY_MODIFIERS) if (new RegExp('\\b'+m+'\\b','i').test(text)) { fm = m; break; }
+  if (fm === 'slender') fm = 'slim';   // v7.13.2 — 'slender' is a slim-synonym, not a distinct body key; normalize so it resolves (was silently dropped to random)
   if (fe.length) engine.setFlag('pill_descriptor_effects_present', { ttl: 1, value: fe });
   if (fm) engine.setFlag('pill_descriptor_body_modifier_present', { ttl: 1, value: fm });
   return { effects: fe, modifier: fm };
@@ -7407,16 +7409,25 @@ function detectBirth(text, engine) {
 // (e.g. "*2 weeks later*"). Vague time language is intentionally ignored; only a
 // quantified number+unit advances time. Drives the scene-jump directive + the
 // gestation clock (replaces the old +4/+8-turn auto-advance and vague stage-text).
-const TIME_SKIP_RE = /^[\s*\[\(]*(?:after\s+)?(\d{1,3})\s*(day|week|month|year)s?\s*(?:later|after|ahead|forward|on|pass(?:es|ed)?|go(?:es)?\s+by)?[\s*\].)]*$/i;
+// v7.13.2 — widened to accept spelled-out quantities ("a week later", "nine months later",
+// "a few weeks later", "the next morning") in addition to digits. The marker must STILL be the
+// whole (trimmed) message — the ^…$ anchors keep false positives near zero. morning/evening/night
+// map to a 1-day skip (mainly to fire the scene-jump on "the next morning"). Quantity words are
+// converted via TIME_SKIP_WORDS below.
+const TIME_SKIP_RE = /^[\s*\[\(]*(?:the\s+|after\s+)?(a few|a couple(?:\s+of)?|few|couple(?:\s+of)?|several|next|\d{1,3}|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(morning|evening|night|day|week|month|year)s?\s*(?:later|after|ahead|forward|on|pass(?:es|ed)?|go(?:es)?\s+by)?[\s*\].)]*$/i;
+const TIME_SKIP_WORDS = { 'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12, 'next': 1, 'few': 3, 'a few': 3, 'couple': 2, 'a couple': 2, 'several': 4 };
 function detectTimeSkip(text, engine) {
   if (!text || typeof text !== 'string') return false;
   var m = text.trim().match(TIME_SKIP_RE);
   if (!m) return false;
-  var n = parseInt(m[1], 10);
+  var q = m[1].toLowerCase().replace(/\s+of$/, '').replace(/\s+/g, ' ').trim();
+  var n = /^\d+$/.test(q) ? parseInt(q, 10) : (TIME_SKIP_WORDS[q] || 0);
   if (!n || n < 1) return false;
-  var unit = m[2].toLowerCase();
+  var rawUnit = m[2].toLowerCase();
+  var partOfDay = (rawUnit === 'morning' || rawUnit === 'evening' || rawUnit === 'night');
+  var unit = partOfDay ? 'day' : rawUnit;
   var weeks = unit === 'day' ? (n / 7) : unit === 'month' ? (n * 4.345) : unit === 'year' ? (n * 52) : n;
-  var label = n + ' ' + unit + (n === 1 ? '' : 's');
+  var label = partOfDay ? ('the next ' + rawUnit) : (n + ' ' + rawUnit + (n === 1 ? '' : 's'));
   engine.setFlag('detected_time_skip', { ttl: 1, value: { weeks: weeks, label: label } });
   return true;
 }
@@ -13141,6 +13152,7 @@ function parsePillDescriptor(text, rs) {
       break;
     }
   }
+  if (result.body_modifier === 'slender') result.body_modifier = 'slim';   // v7.13.2 — synonym → real 'slim' body key
 
   // Extract effect keywords from flavor_triggers
   const flavorTriggers = rs.flavor_triggers || [];
@@ -16549,6 +16561,12 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     // <scene-jump> directive at the after-last-user generation point.
     if (_isTxTurn && txLines.length) {
       state._priority_directive_this_turn = txLines.join('\n');
+      // v7.13.2 — a time-skip can co-occur with a pill intake in the same user message. The TX
+      // block wins the slot, but DON'T silently drop the scene-jump — append it so the model still
+      // cuts to the new scene/time instead of narrating the transformation in the old scene.
+      if (state._scene_jump_this_turn) {
+        state._priority_directive_this_turn += '\n' + _buildSceneJumpBlock(state._scene_jump_this_turn);
+      }
     } else if (state._scene_jump_this_turn) {
       state._priority_directive_this_turn = _buildSceneJumpBlock(state._scene_jump_this_turn);
     } else if (state._antidote_revert_this_turn) {
