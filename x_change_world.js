@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.2",
+  "version": "7.13.3",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -4221,7 +4221,7 @@ const LORE_DATA =
           "height": "5'3\"-5'6\"",
           "weight": "110-130lbs",
           "build": "lean toned, light muscle definition",
-          "bust": "B-D cup",
+          "bust": "B-DD cup",
           "hips": "moderate, defined waist",
           "note": "Athletic lean look without bulk."
         },
@@ -4253,7 +4253,7 @@ const LORE_DATA =
           "height": "5'5\"-5'8\"",
           "weight": "125-145lbs",
           "build": "toned muscle, strong legs, flat stomach",
-          "bust": "B-D cup, firm",
+          "bust": "B-DD cup, firm",
           "hips": "athletic, toned",
           "note": "Strong and capable looking. Not bulky."
         },
@@ -4321,7 +4321,7 @@ const LORE_DATA =
               "average": "H-J cup",
               "curvy": "H-J cup",
               "busty": "J-K cup",
-              "voluptuous": "K-L cup",
+              "voluptuous": "J-K cup",
               "_default": "H-J cup"
             }
           },
