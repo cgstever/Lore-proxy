@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.12.6",
+  "version": "7.13.0",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -4140,7 +4140,15 @@ const LORE_DATA =
     "session_floor_min": 8.0,
     "session_floor_max": 24.0,
     "_session_floor_note": "v7.12.6 — once arousal first reaches session_floor_engage (50) the session floor is ROLLED ONCE: floor = round(clamp(session_floor − CON_mod×session_floor_con_factor + randInt(−roll,+roll), min, max)). High CON settles lower, low CON stays warmer; ±session_floor_roll variance. Held (state._session_floor_value) for the rest of the SESSION (the dom's orgasm clears it, re-rolled next session). Stops arousal dumping to 0 after the gate fires / between idle turns, so it re-climbs from the floor not from scratch. Effect addiction_floor still wins when higher.",
-    "_ai_scan_note": "v7.12.2 — the character's prose nudges arousal (so a keyword-light suggestive scene doesn't sit at 0) but is hard-capped low: AI hits count at ai_scan_weight (0.5×) and add at most ai_scan_cap (3.0) per turn. {{user}}'s own messages drive the bulk at full weight (scan_cap 8.0). Raise ai_scan_cap for hotter, lower for gentler.",
+    "_ai_scan_note": "v7.12.2 — the character's prose nudges arousal (so a keyword-light suggestive scene doesn't sit at 0) but is hard-capped low: AI hits count at ai_scan_weight (0.5×) and add at most ai_scan_cap (3.0) per turn. {{user}}'s own messages drive the bulk at full weight (scan_cap 8.0). Raise ai_scan_cap for hotter, lower for gentler. [v7.13.0 — SUPERSEDED: scanArousal no longer keyword-sums; see act_phases below. scan_cap/ai_scan_cap/ai_scan_weight + user_action_weights are now unused by the scan but left for reference.]",
+    "act_phases": {
+      "_note": "v7.13.0 — ACT-PHASE arousal (replaces keyword-sum). Arousal is driven by the highest physical ACT {{user}} performs in their *action* text (not hot words). Each act has a soft resting TARGET arousal pulls toward (at pull_rate) + a slow CREEP that keeps it rising past the target — NO ceiling. Talk holds (creep 0), never crashes. Spoken \"quotes\" only color within-band (speech_color) and can't advance the act. Ladder: talk→kiss→grope→oral→penetration; penetration reaches the 80 orgasm-gate, which then takes over. Phase rises instantly on a higher act, recedes one step after recede_after talk-only turns (lowering creep, never crashing). All dials live; patterns are in code (_ACT_* near scanArousal). Tune targets to move where each act 'sits', creep for how fast a held act keeps building.",
+      "targets": { "talk": 8, "kiss": 18, "grope": 38, "oral": 58, "penetration": 82 },
+      "creep":   { "talk": 0, "kiss": 0.4, "grope": 0.8, "oral": 1.2, "penetration": 1.8 },
+      "pull_rate": 0.45,
+      "recede_after": 2,
+      "speech_color": 0.2
+    },
     "user_action_weights": {
       "tease": 1.5,
       "teasing": 1.5,
@@ -11803,90 +11811,138 @@ function _detectSlotRemovals(text, state) {
   return changed;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v7.13.0 — ACT-PHASE AROUSAL. Arousal is driven by what {{user}} DOES (the act in
+// their *action* text), not by counting hot words. Each act has a soft RESTING TARGET
+// arousal pulls toward + a slow CREEP past it — NO ceiling (sustained anything keeps
+// drifting up; talk HOLDS, never crashes). Spoken "quotes" count only as a small
+// within-band color and can NEVER advance the phase. The pull is translated into a
+// growArousal weight, so CON-scaling AND the 80 orgasm-gate stay exactly as before.
+// Replaces the keyword-SUM scan (which scored prose density, conflated talk with act,
+// and fed an AI-prose loop the model could flood). See engine/_arousal_phase_sim.js.
+//
+// SCOPE: these helpers + pattern lists are MODULE-scope (defined here, beside
+// scanArousal). Do NOT move them into the _xRebuildSystem IIFE or reference its
+// SEX_ENGAGEMENT_PATTERNS from here — that is the v7.12.4 scope trap (IIFE-scoped
+// symbols are invisible to module-scope callers → ReferenceError → processTurn crash).
+// Penetration detection MIRRORS the rebuild's SEX_ENGAGEMENT_PATTERNS by design.
+// ─────────────────────────────────────────────────────────────────────────────
+const _ACT_PENETRATION = [
+  /\b(?:thrust|push|slide|sink|drive|enter|penetrat|plunge|bury|pump|stroke|pound|hammer|piston|buck)\w*[\s\S]{0,30}\b(?:into|inside|in\b|deep|deeper|her|me|you)/i,
+  /\b(?:fuck|fucking|fucked|fucks)\b/i,
+  /\b(?:ride|riding|rode|rides)\b[\s\S]{0,20}\b(?:cock|dick|him|his)\b/i,
+  /\b(?:grind|grinding|grinds|grinded)\b[\s\S]{0,20}\b(?:against|on|onto|hips)\b/i,
+  /\b(?:cock|dick|shaft|girth|length)\b[\s\S]{0,30}\b(?:inside|filling|stretching|spreading|impal|buried|deep)/i,
+  /\b(?:hold|holding|held|pull|pulls|pulling|pulled|withdraw|withdraws|withdrew|rock|rocks|rocking)\b[\s\S]{0,30}\b(?:inside|deep|cervix|pussy|her\s+entrance|tip)/i,
+];
+const _ACT_ORAL = [
+  /\b(?:suck|sucking|sucks|sucked|blow(?:job|ing)?|deepthroat\w*)\b[\s\S]{0,25}\b(?:cock|dick|shaft|tip|head|it|him)\b/i,
+  /\b(?:eat\w*|lick\w*|tongue\w*|mouth\w*|lap\w*)\b[\s\S]{0,25}\b(?:pussy|clit|cunt|her\s+out|entrance|folds|core)\b/i,
+  /\b(?:guide|push|pull)\w*\s+(?:her|his)\s+head\b[\s\S]{0,25}\b(?:cock|dick|down)\b/i,
+  /\bpull\w*\s+(?:out|free)\b[\s\S]{0,30}\b(?:cock|dick|shaft|length)\b/i,
+  /\bguid\w*\s+(?:her|his)\s+hands?\b[\s\S]{0,25}\b(?:to|onto|around|over)\b/i,
+  /\b(?:stroke|jerk|pump|grip|wrap|grab)\w*[\s\S]{0,20}\b(?:cock|dick|shaft|length|it)\b/i,
+  /\bhandjob\b/i,
+];
+const _ACT_GROPE = [
+  /\b(?:grope\w*|squeeze\w*|grab\w*|slap\w*|stroke\w*|rub\w*|finger\w*|grind\w*|pinch\w*|tease\w*)\b[\s\S]{0,25}\b(?:clit|nipple|nipples|ass|tits|breast\w*|thigh\w*|pussy|entrance|cock|her|him)\b/i,
+  /\b(?:clit|nipple|nipples)\b/i,
+  /\b(?:untie|remove|pull\w*\s+(?:off|down|aside)|expose\w*|strip\w*)\b[\s\S]{0,30}\b(?:bottoms|top|panties|underwear|bra|clothes|pussy)\b/i,
+  /\b(?:ass|tits|breast\w*)\b[\s\S]{0,15}\b(?:slap|smack|spank|squeeze|grab)\w*/i,
+];
+const _ACT_KISS = [
+  /\b(?:kiss\w*|caress\w*|hold\w*|cuddl\w*|nuzzl\w*|embrac\w*|makeout|make\s+out)\b/i,
+  /\b(?:touch\w*|grab\w*|slap\w*|squeeze\w*)\b[\s\S]{0,20}\b(?:ass|tits|breast\w*|thigh\w*|hip\w*|body|her|him)\b/i,
+];
+const _ACT_PHASE_NAMES = ['talk', 'kiss', 'grope', 'oral', 'penetration'];
+
+// Split a {{user}} message into ACTION text (*…* + unmarked narration, full weight) vs
+// SPOKEN text ("…", color-only). The act tier is read from the action text alone, so
+// "talking about" an act can never score like doing it.
+function _splitActionSpeech(raw) {
+  const text = String(raw || '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  let speech = '';
+  const re = /"([^"]*)"/g; let m;
+  while ((m = re.exec(text)) !== null) speech += ' ' + m[1];
+  const action = text.replace(/"[^"]*"/g, ' ');
+  return { action: action, speech: speech };
+}
+
+// Highest act present in a chunk of action text → phase index 0..4.
+function _detectActTier(action) {
+  if (!action || !action.trim()) return 0;
+  for (const re of _ACT_PENETRATION) if (re.test(action)) return 4;
+  for (const re of _ACT_ORAL)        if (re.test(action)) return 3;
+  for (const re of _ACT_GROPE)       if (re.test(action)) return 2;
+  for (const re of _ACT_KISS)        if (re.test(action)) return 1;
+  return 0;
+}
+
 function scanArousal(messagesRecent, state, rs, debug) {
-  const cap = parseFloat(rs.arousal_system?.scan_cap || 999.0);
-  let gained = 0.0;
-  const hits = [];
-  const actionKw = rs.arousal_action_kw || [];
-  // v7.12.2 — middle ground for the AI-prose scan (see the assistant branch below)
-  // v7.12.3 — the cap SCALES with the character's arousal stat factor (CON): a sensitive char
-  // (low CON, factor >1) lets the scene move them more; a sturdy one (high CON, factor <1) less.
-  // _statGainFactor is fail-safe (×1.0 with no stats), so the base cap still applies as a floor.
-  const aiCap = parseFloat(rs.arousal_system?.ai_scan_cap || 3.0) * _statGainFactor(state, 'arousal');
-  const aiWeight = parseFloat(rs.arousal_system?.ai_scan_weight || 0.5);  // AI hits count at reduced weight
-  let aiGained = 0.0;
+  const as = rs.arousal_system || {};
+  const ap = as.act_phases || {};
+  const TGT = ap.targets || { talk: 8, kiss: 18, grope: 38, oral: 58, penetration: 82 };
+  const CRP = ap.creep   || { talk: 0, kiss: 0.4, grope: 0.8, oral: 1.2, penetration: 1.8 };
+  const pull = parseFloat(ap.pull_rate != null ? ap.pull_rate : 0.45);
+  const recedeAfter = parseInt(ap.recede_after != null ? ap.recede_after : 2, 10);
+  const speechColor = parseFloat(ap.speech_color != null ? ap.speech_color : 0.2);
 
+  // Clothing-removal detection still runs on the whole window (mutual; feeds applyClothingArousal).
   for (const msg of messagesRecent) {
-    const text = msg.content || '';
-    const role = (msg.role || '').toLowerCase();
-
-    // v7.11.1 — scan the USER's messages, not the character's. Arousal should be
-    // driven by what {{user}} writes and does, not by the AI narrating the character's
-    // aroused state (moan/wet/thrust in the AI's own prose was pumping arousal on its
-    // own, so it climbed regardless of {{user}}). Per Cody: "stop scanning char
-    // messages, only user, so i can control it." The user-action verbs (tease/touch/
-    // stroke/finger…) already scan user below; this puts the state/act keyword tiers
-    // (low/medium/high/penetration) on the same side.
-    if (role === 'user') {
-      for (const [weight, pat] of rs.arousal_kw || []) {
-        if (pat.test(text) && gained < cap) {
-          const before = getArousal(state);
-          growArousal(state, weight, rs);
-          gained += getArousal(state) - before;
-          hits.push(pat.source + '(+' + weight + ')');
-        }
-      }
-    }
-
-    if (role === 'user' && actionKw.length > 0) {
-      for (const [weight, pat] of actionKw) {
-        if (pat.test(text) && gained < cap) {
-          const before = getArousal(state);
-          growArousal(state, weight, rs);
-          gained += getArousal(state) - before;
-          hits.push(pat.source + '[act+' + weight + ']');
-        }
-      }
-    }
-
-    // v7.12.2 — MIDDLE GROUND: scan the CHARACTER's prose again, but HARD-CAPPED low.
-    // v7.11.1 (user-only) left arousal frozen at 0 when {{user}}'s dialogue is suggestive
-    // but keyword-light ("you want my cock?") while the AI clearly narrates the character
-    // getting worked up (trembling, breath hitching). Re-include the AI side at reduced
-    // weight + a small SEPARATE cap so the character "feels" things and nudges the meter,
-    // WITHOUT the old runaway (a hot AI paragraph used to add +14; now ≤ ~aiCap). {{user}}'s
-    // actions still drive the bulk (full weight above). aiCap/aiWeight are the tuning dials.
-    if (role === 'assistant') {
-      for (const [weight, pat] of rs.arousal_kw || []) {
-        if (pat.test(text) && aiGained < aiCap) {
-          const before = getArousal(state);
-          growArousal(state, weight * aiWeight, rs);
-          const got = getArousal(state) - before;
-          aiGained += got;
-          hits.push(pat.source + '(ai+' + (Math.round(got * 10) / 10) + ')');
-        }
-      }
-    }
-    // v7.11.0 — per-slot clothing removal scan. Runs on BOTH user and assistant
-    // text (clothing is mutual — user removes char's, AI narrates removal). Slot
-    // changes don't blow the outfit identity (_outfit_meta stays) so re-dressing
-    // still works.
-    if (typeof _detectSlotRemovals === 'function') {
-      _detectSlotRemovals(text, state);
-    }
+    if (typeof _detectSlotRemovals === 'function') _detectSlotRemovals(msg.content || '', state);
   }
 
-  // Track consecutive turns with no arousal activity
-  if (hits.length > 0) {
-    state._arousal_dry_turns = 0;
-  } else {
+  // v7.11.1 — phase is driven by the LATEST {{user}} message only ("so i can control it").
+  // The character's prose no longer touches arousal at all — kills the old AI feedback loop.
+  let userMsg = null;
+  for (let i = messagesRecent.length - 1; i >= 0; i--) {
+    if ((messagesRecent[i].role || '').toLowerCase() === 'user') { userMsg = messagesRecent[i]; break; }
+  }
+  if (!userMsg) {
     state._arousal_dry_turns = (state._arousal_dry_turns || 0) + 1;
+    if (debug) console.log('[AROUSAL] no user message in window (dry: ' + state._arousal_dry_turns + ')');
+    return;
   }
 
-  if (debug && hits.length > 0) {
-    console.log('[AROUSAL] +' + Math.round(gained * 100) / 100 + ' from: ' + hits.join(', '));
-  } else if (debug) {
-    console.log('[AROUSAL] no keywords matched (dry streak: ' + state._arousal_dry_turns + ')');
+  const split = _splitActionSpeech(userMsg.content || '');
+  const tier = _detectActTier(split.action);
+
+  // Phase FSM: rise immediately to a higher act; recede ONE step after recedeAfter
+  // talk-only turns. Receding only lowers the creep rate — it never crashes arousal.
+  let phase = (state._act_phase != null) ? parseInt(state._act_phase, 10) : 0;
+  let pdry = state._act_phase_dry || 0;
+  if (tier >= phase) { phase = tier; pdry = 0; }
+  else { pdry++; if (pdry >= recedeAfter) { phase = Math.max(tier, phase - 1); pdry = 0; } }
+  state._act_phase = phase;
+  state._act_phase_dry = pdry;
+  const phaseName = _ACT_PHASE_NAMES[phase] || 'talk';
+
+  // Spoken heat colors WITHIN the band only — it can never advance the phase.
+  const speechHeat = /\b(cock|inside|fuck|cum|pussy|suck|breed|deep|hard)\b/i.test(split.speech);
+  const speechBonus = speechHeat ? speechColor * 10 : 0;
+  const target = parseFloat(TGT[phaseName] != null ? TGT[phaseName] : 0) + speechBonus;
+  const creep  = parseFloat(CRP[phaseName] != null ? CRP[phaseName] : 0);
+
+  // Pull toward target + slow creep past it. Translate to a growArousal weight by pre-dividing
+  // out its (1 + current/scale) accelerator so the NET rise equals the phase delta. CON is
+  // applied ONCE inside growArousal (do NOT pre-apply). growArousal also runs the 80 gate rolls.
+  const cur = getArousal(state);
+  const scale = _arousalScale(rs);
+  const rawDelta = (cur < target) ? (target - cur) * pull + creep : creep;   // ≥0 → never crashes (talk holds)
+  if (rawDelta > 0.0001) {
+    const weight = rawDelta / (1.0 + cur / scale);
+    growArousal(state, weight, rs);
+  }
+
+  // Dry-turn tracking for the effect-gated idle decay (applyArousalDecay): a talk-only
+  // turn counts toward the dry streak; any real act resets it.
+  if (tier > 0) state._arousal_dry_turns = 0;
+  else state._arousal_dry_turns = (state._arousal_dry_turns || 0) + 1;
+
+  if (debug) {
+    console.log('[AROUSAL] act=' + _ACT_PHASE_NAMES[tier] + ' phase=' + phaseName + ' ' +
+      cur.toFixed(1) + '→' + getArousal(state).toFixed(1) +
+      (speechBonus ? ' (+talk' + speechBonus + ')' : '') + ' dry=' + state._arousal_dry_turns);
   }
 }
 
