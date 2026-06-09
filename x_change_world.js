@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.7",
+  "version": "7.13.8",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -18664,9 +18664,14 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   // Runs after the copy-back, so restore the flag (+ clock) here. Birth clears _conception_turn
   // (7905), so this never resurrects a delivered pregnancy. Mirrors applyTimeSkip's stage→weeks
   // seed + the 38–42 due-week roll; runs before buildHeader so motherhood mode sees it same turn.
-  var _conceived = !!((state.flags && state.flags.pregnancy_confirmed)
-                   || (state.pregnancy && state.pregnancy.confirmed)
-                   || (state._conception_turn != null));
+  // v7.13.8 — trust ONLY owned, birth-cleared signals: the pregnancy_confirmed FLAG and
+  // _conception_turn (both REBUILD_OWNED_FIELDS, both cleared by the auto-birth ~7905). Do NOT trust
+  // state.pregnancy.confirmed — the pregnancy OBJECT is NOT rebuild-owned, so the birth's delete on
+  // the shadow never reaches realState; using it as a "conceived" signal RESURRECTED the pregnancy
+  // right after every birth (live: Sasha birthed → instantly pregnant again with NO creampie). Use
+  // the owned signals only, and CLEAR the stale object when genuinely not pregnant so nothing
+  // downstream (applyTimeSkip's pregnant-check, etc.) re-reads it.
+  var _conceived = !!((state.flags && state.flags.pregnancy_confirmed) || (state._conception_turn != null));
   if (_conceived) {
     if (!state.flags) state.flags = {};
     state.flags.pregnancy_confirmed = true;                 // recover the flag the copy-back reverted
@@ -18678,6 +18683,8 @@ function processTurn({systemText, messages, state, personaState, config, charNam
       state._gestation_weeks = (state.flags && state.flags.pregnancy_stage_late) ? 28
                              : (state.flags && state.flags.pregnancy_stage_showing) ? 12 : 0;
     }
+  } else if (state.pregnancy && state.pregnancy.confirmed) {
+    state.pregnancy.confirmed = false;   // stale object survived a birth (not rebuild-owned) — clear it
   }
 
   updatePersonaRelationship(personaState, name, events, state, rs);
