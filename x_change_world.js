@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.0",
+  "version": "7.13.1",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -6887,7 +6887,12 @@ const _TRANSFORM_AROUSAL_COMPACT = {"pink":{"male":{"CON":{"cold":{"vlow":["brea
 
 const AROUSAL_MAX = 100;
 const FRAG_CAP = 100;
-const ORG_ZONE = 45;
+// v7.13.1 — orgasm-zone floor for NORMAL (non-breeder-creampie) climaxes. Was 45, which
+// let _checkOrgasmTrigger roll a normal orgasm at arousal 45-79 — contradicting the 80 floor
+// used everywhere else (growArousal's AROUSAL_GATE_FLOOR=80, the rebuild's own ORG_ZONE=80 at
+// the IIFE scope, and the v7.12.5 NO-CLIMAX hard rule). Breeder/surrogate creampie orgasms are
+// exempt (handled before this gate in _checkOrgasmTrigger), so this only governs ordinary climax.
+const ORG_ZONE = 80;
 const GATE_DC_BASE = 10;
 
 const ALL_PILLS = new Set(['pink', 'red', 'purple', 'blue', 'green']);
@@ -7708,7 +7713,12 @@ function registerClimaxSession(engine, opts) {
     } catch (_) { /* fall through */ }
     state.arousal = 0;
   });
-  engine.registerHandler('engageSession', state => { if (Session.getState() === 'idle') Session.transition('engaged', 'sex_engagement_detected'); });
+  // v7.13.1 — also re-engage from 'ended' (not just 'idle'). The FSM had no exit from 'ended',
+  // so after the first male orgasm it wedged there forever: later sex never re-fired
+  // session_engaged/ended_this_turn, so the rebuild's session resets stopped running (masked
+  // today by the legacy _session_end_pending reset, but the FSM lifecycle was still broken for
+  // multi-session chats). Re-arming on the next detected sex restores the idle→engaged→ended cycle.
+  engine.registerHandler('engageSession', state => { var _s = Session.getState(); if (_s === 'idle' || _s === 'ended') Session.transition('engaged', 'sex_engagement_detected'); });
   engine.registerHandler('arousalGateOrgasmCheck', state => {
     const a = state.arousal || 0;
     if (a < 80) return;
@@ -8401,6 +8411,12 @@ const REBUILD_OWNED_FIELDS = [
   // the due-week persists across the pregnancy and the birth fires once / its directive
   // survives swipes of the birth turn.
   '_due_week', '_term_birth_fired_turn',
+  // v7.13.1 — conception turn. The rebuild's rollPregnancyConception sets it on the shadow,
+  // but it was NOT owned, so a rebuild-rolled pregnancy never propagated _conception_turn to
+  // real state → _isMotherhoodMode stayed false forever (the surrogate/breeder motherhood rule
+  // never injected). Owning it means both engines' conception turn reaches real state. (The
+  // legacy path also sets it; the pre-snapshot clone makes the copy-back idempotent.)
+  '_conception_turn',
   // v7.11.0 — outfit per-slot tracker, outfit identity meta, and the short
   // recently-removed-garments list (for "she puts her shirt back on" coherence).
   '_outfit_slots', '_outfit_meta', '_removed_garments',
@@ -9298,12 +9314,13 @@ function compileRuleset(data) {
   let neg_words = pd.negation_words ? [...pd.negation_words] : [];
   const fp_phrases = pd.intake_false_positives || [];
 
-  for (const w of ['no', 'back']) {
-    if (!neg_words.includes(w)) neg_words.push(w);
-  }
-
+  // v7.13.1 — do NOT force-add bare 'back'. Within the 40-char verb window it matched ordinary
+  // body motion ("leaned back and swallowed", "tipped her head back", "back of her throat") and
+  // silently killed real pill intakes. The ONLY legit case is "take/give/put it back" = a RETURN,
+  // kept below as a phrase (it/them + back). 'no' is already in negation_words, so no force-add.
   if (neg_words.length > 0) {
-    rs.pill_negation_re = new RegExp('\\b(' + neg_words.map(reEscape).join('|') + ')\\b', 'i');
+    const esc = neg_words.map(reEscape).join('|');
+    rs.pill_negation_re = new RegExp('\\b(?:' + esc + '|(?:it|them)\\s+back)\\b', 'i');
   }
   if (fp_phrases.length > 0) {
     // Match at word boundary — no leading whitespace requirement
@@ -18529,6 +18546,22 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   } catch (_xrErr) {
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[XR] runTurn error (non-fatal):', _xrErr && _xrErr.message ? _xrErr.message : _xrErr);
+    }
+  }
+
+  // v7.13.1 — pregnancy state invariant: a CONFIRMED pregnancy must always carry a conception
+  // turn + a gestation clock, no matter which engine (rebuild vs legacy) rolled it. The legacy
+  // conception path sets _conception_turn but not the clock; the rebuild path sets the clock.
+  // Without this, a legacy-rolled pregnancy could sit pregnancy_confirmed=true with no _due_week
+  // (never auto-births until a time-skip migrates it) and motherhood mode could never engage.
+  // Mirrors applyTimeSkip's migration seed (stage→weeks) + the 38–42 due-week roll. Runs before
+  // buildHeader so _isMotherhoodMode reads a fully-seeded pregnancy this same turn.
+  if ((state.flags && state.flags.pregnancy_confirmed) || (state.pregnancy && state.pregnancy.confirmed)) {
+    if (state._conception_turn == null) state._conception_turn = (state.turn != null ? state.turn : 0);
+    if (state._due_week == null) state._due_week = randInt(38, 42);
+    if (state._gestation_weeks == null) {
+      state._gestation_weeks = (state.flags && state.flags.pregnancy_stage_late) ? 28
+                             : (state.flags && state.flags.pregnancy_stage_showing) ? 12 : 0;
     }
   }
 
