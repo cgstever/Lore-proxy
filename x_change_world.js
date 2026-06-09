@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.3",
+  "version": "7.13.4",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -11447,16 +11447,16 @@ function growArousal(state, weight, rs) {
     return;
   }
 
-  // v7.10.7 — arousal floor of 80 before the per-tier gate rolls kick in. Without this
-  // floor the legacy gate rolled at every tier boundary starting from arousal 0, so a
-  // low-WIL character (Paul: WIS=5 → -2 mod, ~45% pass rate per tier) would fail some
-  // tier in the 40-70 range and trigger an orgasm. Paul's live data: gate crossed at
-  // arousal 58.6. The rebuild's arousalGateOrgasmCheck (line ~7341) ALREADY had this
-  // floor (`if (a < 80) return`); the legacy gate was inconsistent — fixed now by
-  // mirroring. Below 80, arousal grows freely without rolling. At/above 80 the existing
-  // per-tier d20+stat-vs-DC system runs as before, preserving the negative-block prose,
-  // DC ramp, pass-streak, and fatigue-break mechanics intact.
-  const AROUSAL_GATE_FLOOR = 80;
+  // v7.13.4 — per-tier gate fires at EVERY 5 again (floor back to 0), per Cody. The v7.10.7
+  // 80-floor was added to stop low-WIL chars ORGASMING in the 40-70 range back when a gate
+  // *cross* directly fired a climax. Orgasm is now decided SOLELY by _checkOrgasmTrigger (gated
+  // at ORG_ZONE=80), NOT by a gate cross (orgasmThisTurn = orgResult.orgasm). A cross only feeds
+  // the masculinity delta (see ~14395: crossedTo>=10 → -2, >=15 → -3 — thresholds that ONLY make
+  // sense if gates fire low) and the fail count. So the 80-floor was silently killing the
+  // per-tier feminization struggle. Restore it: gain hits each /5 gate → PASS holds → FAIL keeps
+  // going to the next gate until it passes or the gain runs out; fails tracked. Orgasm stays
+  // floored at 80 via _checkOrgasmTrigger. Config-tunable (arousal_system.gate_floor, default 0).
+  const AROUSAL_GATE_FLOOR = parseFloat(rs.arousal_system && rs.arousal_system.gate_floor != null ? rs.arousal_system.gate_floor : 0);
   let pos = current;
   if (pos < AROUSAL_GATE_FLOOR) {
     if (proposed <= AROUSAL_GATE_FLOOR) {
@@ -18400,6 +18400,15 @@ function processTurn({systemText, messages, state, personaState, config, charNam
   const arousalScanMsgs = chatOnly.length >= 2 ? chatOnly.slice(-2) : chatOnly;
 
   if (state.turn > 1) {
+    // v7.13.4 — the per-/5 arousal gate is a PER-TURN attempt: each turn's gain re-rolls the gate
+    // from current arousal (gain hits gate → PASS holds → FAIL crosses + keeps going). Clear last
+    // turn's held/crossed VERDICT so it doesn't clamp this turn's gain — otherwise, now that gates
+    // fire below 80, a low-tier PASS would pin arousal at that boundary forever (no orgasm down
+    // there to reset it). The cumulative DC ramp, fail count, and pass-streak (fatigue-break)
+    // PERSIST. The crossed verdict set by scanArousal below is still read same-turn by
+    // processEvents (masc delta) before the next turn clears it.
+    delete state._arousal_gate_done; delete state._arousal_gate_held_at;
+    delete state._arousal_gate_crossed_to; delete state._arousal_gate;
     applyEffectPassives(state, rs);
     scanArousal(arousalScanMsgs, state, rs);
     applyArousalDecay(state, rs);
