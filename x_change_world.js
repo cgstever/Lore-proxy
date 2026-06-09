@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.5",
+  "version": "7.13.6",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -16112,6 +16112,17 @@ function fmtEffects(state) {
 
 var _lastPersonaBlock = null;  // Set by buildHeader, read by processTurn
 
+// v7.13.6 — sex-aware pronouns for the engine's directives (she/he/they by CURRENT sex), so a
+// transformed-female char reads as "she" not the neutral "they", and the rename directive uses
+// the right pronoun instead of a hardcoded "she".
+function _charPronouns(sex) {
+  var s = String(sex || '').toLowerCase();
+  if (s === 'female' || s.indexOf('fem') >= 0 || s.indexOf('futa') >= 0 || s.indexOf('girl') >= 0 || s.indexOf('woman') >= 0)
+    return { subj: 'she', obj: 'her', poss: 'her', Subj: 'She', refl: 'herself' };
+  if (s === 'male' || s === 'man' || s.indexOf('boy') >= 0)
+    return { subj: 'he', obj: 'him', poss: 'his', Subj: 'He', refl: 'himself' };
+  return { subj: 'they', obj: 'them', poss: 'their', Subj: 'They', refl: 'themselves' };
+}
 function buildHeader(name, cardSex, state, notes, events, rs, persona, personaState, cardDescription, personaDescription, personaName) {
   // v7.0.0: Hybrid-format system message. XML tags for structured data
   // (character/user/scene/voice/state/transformation), markdown sections
@@ -16123,6 +16134,7 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   // tag, the hard rules, the <state> block. _card_name keeps the ORIGINAL card name.
   if (state && state._chosen_name) name = state._chosen_name;
   var effSex   = currentSex(state, cardSex, rs);
+  var _pn      = _charPronouns(effSex);   // v7.13.6 — sex-aware pronouns for the directives
   var charName = name || 'the character';
   // v7.0.1: prefer personaName (ctx.name1) over hardcoded 'Persona' literal
   var userName = (personaName && String(personaName).trim())
@@ -16347,14 +16359,17 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   // "MUST orgasm" text above, so only add a CLIMAX line for a plain arousal-gate orgasm.
   var _orgFired = !!(state._org_trigger_result && state._org_trigger_result.orgasm);
   if (!_orgFired) {
-    _hardRuleTexts.push('NO CLIMAX: ' + name + ' does NOT orgasm, cum, or finish this response — no matter how intense it gets. They build, ache, clench, leak, tremble, beg — but the peak does NOT arrive and is never written. The engine decides when release happens; it is not happening this turn.');
+    _hardRuleTexts.push('NO CLIMAX: ' + name + ' does NOT orgasm, cum, or finish this response — no matter how intense it gets. The body builds, aches, clenches, leaks, trembles, begs — but the peak does NOT arrive and is never written. The engine decides when release happens; it is not happening this turn.');
   } else if (unlockedEffects.size === 0) {
-    _hardRuleTexts.push('CLIMAX: ' + name + ' reaches orgasm THIS response — the build finally tips over. Write the release fully and in their voice.');
+    _hardRuleTexts.push('CLIMAX: ' + name + ' reaches orgasm THIS response — the build finally tips over. Write the release fully and in ' + _pn.poss + ' voice.');
   }
 
-  // v7.13.5 — one-time rename directive (fires only the turn the name actually changes).
+  // v7.13.6 — one-time rename directive (fires only the turn the name actually changes). Reworded:
+  // it is a NAME SWAP, not a POV change — the old wording ("use <name> throughout every response")
+  // made the model write her in THIRD PERSON ("Sasha did X") instead of first person. Now it
+  // explicitly forbids third-person self-reference and uses the correct pronoun.
   if (state && state._renamed_this_turn) {
-    _hardRuleTexts.push('NAME CHANGE: she now goes by ' + name + '. Use "' + name + '" for her throughout this and every future response — her previous name no longer applies. Have her recognize and answer to ' + name + '.');
+    _hardRuleTexts.push('NAME CHANGE: the character is now named ' + name + ' (the old name is retired — others address ' + _pn.obj + ' as ' + name + ', and ' + _pn.subj + ' answers to it). This is ONLY a name swap — do NOT change ' + _pn.poss + ' narrative voice or POV. If ' + _pn.subj + ' speaks or narrates in first person, ' + _pn.subj + ' still says "I" and NEVER refers to ' + _pn.refl + ' as "' + name + '" in the third person.');
   }
 
   state._hardRules = _hardRuleTexts.length > 0 ? _hardRuleTexts : null;
