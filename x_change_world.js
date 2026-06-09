@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.6",
+  "version": "7.13.7",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -16364,12 +16364,15 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     _hardRuleTexts.push('CLIMAX: ' + name + ' reaches orgasm THIS response — the build finally tips over. Write the release fully and in ' + _pn.poss + ' voice.');
   }
 
-  // v7.13.6 — one-time rename directive (fires only the turn the name actually changes). Reworded:
-  // it is a NAME SWAP, not a POV change — the old wording ("use <name> throughout every response")
-  // made the model write her in THIRD PERSON ("Sasha did X") instead of first person. Now it
-  // explicitly forbids third-person self-reference and uses the correct pronoun.
+  // v7.13.7 — name directives. The anti-third-person VOICE rule must be PERSISTENT (every turn
+  // while renamed), not one-shot: the engine tells the model to match the POV of prior messages,
+  // so once a third-person self-reference ("Sasha doesn't understand…") lands in the history it
+  // self-perpetuates — a one-shot directive on the rename turn can't undo an established pattern.
   if (state && state._renamed_this_turn) {
-    _hardRuleTexts.push('NAME CHANGE: the character is now named ' + name + ' (the old name is retired — others address ' + _pn.obj + ' as ' + name + ', and ' + _pn.subj + ' answers to it). This is ONLY a name swap — do NOT change ' + _pn.poss + ' narrative voice or POV. If ' + _pn.subj + ' speaks or narrates in first person, ' + _pn.subj + ' still says "I" and NEVER refers to ' + _pn.refl + ' as "' + name + '" in the third person.');
+    _hardRuleTexts.push('NAME CHANGE: the character is now named ' + name + ' — the old name is retired; others address ' + _pn.obj + ' as ' + name + ' and ' + _pn.subj + ' answers to it.');
+  }
+  if (state && state._chosen_name) {
+    _hardRuleTexts.push('VOICE: ' + name + ' speaks in the FIRST PERSON. In ' + _pn.poss + ' OWN dialogue and narration ' + _pn.subj + ' says "I", "me", "my" — ' + _pn.subj + ' must NEVER talk about ' + _pn.refl + ' by name in the third person (NO "' + name + ' wants…", "' + name + ' doesn\'t know…", "' + name + ' feels…"). Even if earlier messages slipped into third-person self-reference, correct it NOW: ' + _pn.subj + ' is the speaker and says "I".');
   }
 
   state._hardRules = _hardRuleTexts.length > 0 ? _hardRuleTexts : null;
