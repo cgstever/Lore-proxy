@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.8",
+  "version": "7.13.9",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7487,7 +7487,7 @@ function registerPillIntake(engine) {
    'pill_intake_forced_phrasing','pill_intake_consent',
    'pill_descriptor_effects_present','pill_descriptor_body_modifier_present',
    'pill_taken_this_turn','pill_persona_target_this_turn',
-   'pill_invalid_for_gender','pill_already_active_same_color','pill_just_transformed']
+   'pill_invalid_for_gender','pill_blocked_pregnant','pill_already_active_same_color','pill_just_transformed']
     .forEach(f => engine.registerFlag(f, { type:'turn_based_reset', ttl:1 }));
   engine.registerFlag('pill_pending', { type:'turn_based_reset', ttl:10 });
 
@@ -7540,6 +7540,12 @@ function registerPillIntake(engine) {
     // gains female body regardless of starting sex).
     const validSexes = Array.isArray(r.valid_birthSex) ? r.valid_birthSex : [r.valid_birthSex];
     if (t.birthSex && !validSexes.includes(t.birthSex)) engine.setFlag('pill_invalid_for_gender', { ttl:1 });
+    // v7.13.9 — pregnancy blocks ALL pills (any color, incl. red/green). The pregnant body
+    // rejects the compound; the dose is consumed but wasted. Same blocking wiring as
+    // invalid_for_gender (apply/effects rules + TX backfill all require_not this flag).
+    if ((t.flags && t.flags.pregnancy_confirmed) || t._conception_turn != null) {
+      engine.setFlag('pill_blocked_pregnant', { ttl:1 });
+    }
   });
   engine.registerHandler('applyPill', state => {
     const c = engine.getFlagValue('pill_taken_this_turn'); const t = _getPillTarget(engine, state);
@@ -7582,8 +7588,8 @@ function registerPillIntake(engine) {
   engine.registerRule({ name:'pill_taken_from_pending', requires:['pill_pending','pill_intake_verb_seen'], requires_not:['pill_taken_this_turn','pill_color_detected'], actions:[{type:'call_handler', name:'consumePillFromPending'}] });
   engine.registerRule({ name:'pill_taken_covert', requires:['pill_color_detected','pill_intake_covert'], requires_not:['pill_taken_this_turn'], actions:[{type:'call_handler', name:'consumePillCovert'}] });
   engine.registerRule({ name:'pill_validity_check', requires:['pill_taken_this_turn'], actions:[{type:'call_handler', name:'checkPillValidity'}] });
-  engine.registerRule({ name:'pill_apply_consequences', requires:['pill_taken_this_turn'], requires_not:['pill_invalid_for_gender'], actions:[{type:'call_handler', name:'applyPill'}] });
-  engine.registerRule({ name:'pill_apply_descriptor_effects', requires:['pill_taken_this_turn'], requires_not:['pill_invalid_for_gender','pill_already_active_same_color'], actions:[{type:'call_handler', name:'applyDescriptorEffects'}] });
+  engine.registerRule({ name:'pill_apply_consequences', requires:['pill_taken_this_turn'], requires_not:['pill_invalid_for_gender','pill_blocked_pregnant'], actions:[{type:'call_handler', name:'applyPill'}] });
+  engine.registerRule({ name:'pill_apply_descriptor_effects', requires:['pill_taken_this_turn'], requires_not:['pill_invalid_for_gender','pill_blocked_pregnant','pill_already_active_same_color'], actions:[{type:'call_handler', name:'applyDescriptorEffects'}] });
 }
 
 function _getAntidoteTarget(engine, state) {
@@ -8543,6 +8549,7 @@ function runTurn(realState, lastUserText, lastAssistantText, preSnapshot) {
       const color = engine.getFlagValue('pill_taken_this_turn');
       let pillLine = 'PILL: ' + color + ' taken';
       if (has('pill_invalid_for_gender'))      pillLine += ' [INVALID for birthSex — wasted]';
+      if (has('pill_blocked_pregnant'))        pillLine += ' [BLOCKED — pregnant body rejects it, wasted]';
       else if (has('pill_already_active_same_color')) pillLine += ' [SUPPRESSED — same color]';
       else if (has('pill_just_transformed'))   pillLine += ' [TRANSFORMED]';
       // v7.7.26 — surface consent state for debugging the TX framing
@@ -13624,6 +13631,10 @@ function _runRollSystem(name, state, effects, notes, rs, personaEffects) {
       state.effect_resistance = state.effect_resistance || {};
       const _preBr = state.effect_resistance.breeder != null ? state.effect_resistance.breeder : 100;
       flags._preconception_breeder_resistance = _preBr;
+      // v7.13.9 — the flag above is REBUILD-OWNED: on a legacy-only conception the copy-back
+      // stomps it back to null this same turn. Stash the value in a non-owned field; the
+      // post-copy-back re-assert (~18690) restores it so the post-birth ramp has its target.
+      state._mm_pre_breeder_r = _preBr;
       state.effect_resistance.breeder = 100;
       const _mmEntry = 'surrogate:conception → motherhood mode (breeder resistance snapshot=' + _preBr + ', reset to 100 for pregnancy)';
       notes.push(_mmEntry);
@@ -16375,6 +16386,9 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
     _hardRuleTexts.push('VOICE: ' + name + ' speaks in the FIRST PERSON. In ' + _pn.poss + ' OWN dialogue and narration ' + _pn.subj + ' says "I", "me", "my" — ' + _pn.subj + ' must NEVER talk about ' + _pn.refl + ' by name in the third person (NO "' + name + ' wants…", "' + name + ' doesn\'t know…", "' + name + ' feels…"). Even if earlier messages slipped into third-person self-reference, correct it NOW: ' + _pn.subj + ' is the speaker and says "I".');
   }
 
+  if (state && state._pill_blocked_pregnant_this_turn) {
+    _hardRuleTexts.push('PILL BLOCKED: the X-Change pill ' + name + ' just took has NO effect — her pregnant body rejects the compound. NO transformation, no new changes begin. Write the dose failing: swallowed, maybe a brief flush of warmth, then… nothing.');
+  }
   state._hardRules = _hardRuleTexts.length > 0 ? _hardRuleTexts : null;
 
   // ── <state> block (flavor + identity + resistance + bimbo) ──
@@ -18487,6 +18501,7 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     // processEvents (masc delta) before the next turn clears it.
     delete state._arousal_gate_done; delete state._arousal_gate_held_at;
     delete state._arousal_gate_crossed_to; delete state._arousal_gate;
+    delete state._pill_blocked_pregnant_this_turn;   // v7.13.9 — one-shot "dose wasted" marker
     applyEffectPassives(state, rs);
     scanArousal(arousalScanMsgs, state, rs);
     applyArousalDecay(state, rs);
@@ -18617,6 +18632,7 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     // generic "It's... starting" prose with no body description.
     if (_xRebuildSystem.engine.isFlagActive('pill_taken_this_turn') &&
         !_xRebuildSystem.engine.isFlagActive('pill_invalid_for_gender') &&
+        !_xRebuildSystem.engine.isFlagActive('pill_blocked_pregnant') &&
         !_xRebuildSystem.engine.isFlagActive('pill_already_active_same_color') &&
         !_xRebuildSystem.engine.isFlagActive('pill_persona_target_this_turn')) {
       var _xrPillColor = _xRebuildSystem.engine.getFlagValue('pill_taken_this_turn');
@@ -18685,6 +18701,43 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     }
   } else if (state.pregnancy && state.pregnancy.confirmed) {
     state.pregnancy.confirmed = false;   // stale object survived a birth (not rebuild-owned) — clear it
+  }
+
+  // v7.13.9 — pregnancy blocks ALL pills. The rebuild's validity gate (checkPillValidity)
+  // stops the apply, but the LEGACY intake path can still have set _pill_descriptor_this_turn —
+  // a ghost TX directive that would make the model narrate a transformation that never happened
+  // in state. Drop it unless the rebuild actually applied a pill this turn (e.g. the
+  // conception-causing green pill taken the same turn she conceived). Either way set the
+  // one-shot marker so buildHeader tells the model the dose failed instead of leaving it
+  // to improvise a transformation from the chat text.
+  if (_xRebuildSystem.engine.isFlagActive('pill_blocked_pregnant')) {
+    state._pill_blocked_pregnant_this_turn = true;
+  }
+  if (_conceived && state._pill_descriptor_this_turn) {
+    var _xrPillOk = _xRebuildSystem.engine.isFlagActive('pill_taken_this_turn') &&
+                    !_xRebuildSystem.engine.isFlagActive('pill_blocked_pregnant') &&
+                    !_xRebuildSystem.engine.isFlagActive('pill_invalid_for_gender');
+    if (!_xrPillOk) {
+      console.log('[XCW] Pill while pregnant — TX directive dropped (' + (state._pill_descriptor_this_turn.color || '?') + ', dose wasted)');
+      delete state._pill_descriptor_this_turn;
+      state._pill_blocked_pregnant_this_turn = true;
+    }
+  }
+
+  // v7.13.9 — motherhood (surrogate) snapshot seam. The legacy conception block (~13623) snapshots
+  // pre-conception breeder resistance into flags._preconception_breeder_resistance, but that flag is
+  // REBUILD-OWNED — on a legacy-only conception the copy-back stomps it back to null the same turn.
+  // The post-birth revert (~13762) then finds no snapshot and takes the "no snapshot → treat as
+  // axed" branch: every legacy-path surrogate pregnancy exits clean and the pill never costs
+  // anything. Re-assert from the non-owned stash written at conception. Never clobber a
+  // rebuild-provided value (its own snapshot handler at 8056 may have fired the same turn —
+  // it reads from the pre-legacy snapshot, which IS the true pre-conception value).
+  if (state._mm_pre_breeder_r != null) {
+    if (!state.flags) state.flags = {};
+    if (state.flags._preconception_breeder_resistance == null) {
+      state.flags._preconception_breeder_resistance = state._mm_pre_breeder_r;
+    }
+    delete state._mm_pre_breeder_r;
   }
 
   updatePersonaRelationship(personaState, name, events, state, rs);
