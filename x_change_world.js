@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.9",
+  "version": "7.13.10",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -11913,6 +11913,45 @@ function _detectActTier(action) {
   return 0;
 }
 
+// v7.13.10 — PROSE GUARDS. Two history-aware correctors: the model locks onto its own
+// patterns (openers, stale body states) and a generic "don't repeat" rule can't break an
+// established pattern — only a hard rule naming the SPECIFIC drift does (the 7.13.7 lesson).
+// (1) Opening-rut: if the last 2-3 assistant replies all began with the same words (card
+//     catchphrases like "This is bullshit, bro..." — 21/22 openers in the live Remy chat),
+//     detect it and ban THAT opener for the next reply.
+// (2) Post-birth: after a delivery the pregnancy lines simply vanish from the header, and an
+//     absence can't outweigh 30 messages of bump-and-kicks prose (live Paul chat: the model
+//     still wrote contractions after the birth). If the engine knows she is NOT pregnant but
+//     the last reply still wrote her pregnant, name the correction.
+function _rutOpening(text) {
+  // normalized opening: strip markup/quote prefixes, first 4 words, lowercased
+  var t = String(text).replace(/^[\s*_~"'«„\-—…]+/, '').toLowerCase();
+  t = t.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var w = t.split(' ').slice(0, 4);
+  return w.length >= 3 ? w.join(' ') : null;
+}
+function _detectOpeningRut(messages) {
+  var asst = [];
+  var arr = messages || [];
+  for (var i = arr.length - 1; i >= 0 && asst.length < 3; i--) {
+    var m = arr[i] || {};
+    var role = m.role || (m.is_user === false ? 'assistant' : 'user');
+    var txt = (m.content != null ? m.content : m.mes);
+    if (role === 'assistant' && typeof txt === 'string' && txt.trim()) asst.push(txt);
+  }
+  if (asst.length < 2) return null;
+  var o0 = _rutOpening(asst[0]);
+  if (!o0) return null;
+  if (_rutOpening(asst[1]) !== o0) return null;
+  return { phrase: o0, count: (asst.length > 2 && _rutOpening(asst[2]) === o0) ? 3 : 2 };
+}
+// CURRENT-body markers ONLY. Talk ABOUT pregnancy stays free: past tense ("when I was
+// pregnant"), desire ("knock me up again", "make me pregnant"), the baby, nursing/milk —
+// none of those may trigger. Bare "pregnant"/"pregnancy"/"belly" are NOT matched; only
+// is/am/still-pregnant claims and physical now-pregnant markers (bump/contraction/
+// trimester/waddling/swollen belly/kicks inside) fire the correction.
+const _PREG_PROSE_RE = /(?:\b(?:am|is|are|still|so|very|visibly|heavily|obviously|remains?)\s+pregnant\b|'(?:m|s|re)\s+pregnant\b|\bpregnant\s+(?:belly|body|curve|glow|silhouette)\b|\b(?:baby\s+bump|belly\s+bump|(?:her|his|their|the)\s+bump\b|trimester|contraction|due\s+date|waddl\w*|(?:swollen|rounded|round|gravid)\s+(?:belly|stomach|middle)|kick(?:s|ed|ing)?\s+(?:inside|in\s+(?:her|the)\s+womb|against\s+(?:her|the)\s+(?:belly|stomach))|heavy\s+with\s+child|carrying\s+(?:his|her|their|your|a)\s+(?:child|baby))\b)/i;
+
 // v7.13.5 — name-change detection. {{user}} OR the character can rename her ("call me Mia",
 // "your name is Mia now", "my name is Mia", "she goes by Mia"); the engine then adopts the new
 // name in everything it controls (the <character> block, hard rules, state block, HUD) plus a
@@ -16389,6 +16428,12 @@ function buildHeader(name, cardSex, state, notes, events, rs, persona, personaSt
   if (state && state._pill_blocked_pregnant_this_turn) {
     _hardRuleTexts.push('PILL BLOCKED: the X-Change pill ' + name + ' just took has NO effect — her pregnant body rejects the compound. NO transformation, no new changes begin. Write the dose failing: swallowed, maybe a brief flush of warmth, then… nothing.');
   }
+  if (state && state._opening_rut && state._opening_rut.phrase) {
+    _hardRuleTexts.push('OPENING RUT: the last ' + (state._opening_rut.count || 2) + ' replies ALL opened with "' + state._opening_rut.phrase + '…". That opener is BANNED this reply — do not start with those words or a near-variation. Open differently: mid-action, a physical sensation, the room, or a line of dialogue that is NOT the catchphrase. A signature catchphrase may appear at most ONCE per reply and never as the opening words.');
+  }
+  if (state && state._postbirth_correction) {
+    _hardRuleTexts.push('POST-BIRTH: ' + name + ' already GAVE BIRTH — ' + _pn.subj + ' is NOT pregnant now. The previous reply still described a CURRENTLY pregnant body; correct it THIS reply: no bump, no baby kicks, no contractions. ' + _pn.poss + ' body is post-partum (recently delivered) — write it accurately. Talking ABOUT the pregnancy is fine (memories, the baby, wanting another) — only the current-body description must change.');
+  }
   state._hardRules = _hardRuleTexts.length > 0 ? _hardRuleTexts : null;
 
   // ── <state> block (flavor + identity + resistance + bimbo) ──
@@ -18739,6 +18784,28 @@ function processTurn({systemText, messages, state, personaState, config, charNam
     }
     delete state._mm_pre_breeder_r;
   }
+
+  // v7.13.10 — prose guards (recomputed fresh every turn; helpers near _detectRename).
+  delete state._opening_rut; delete state._postbirth_correction;
+  try {
+    var _rut = _detectOpeningRut(messages);
+    if (_rut) state._opening_rut = _rut;
+    if (!_conceived) {
+      var _birthed = (parseInt(state.pregnancies_completed || 0, 10) > 0) ||
+                     ((state.flags && state.flags._surrogate_pregnancy_count) > 0);
+      if (_birthed) {
+        var _pgArr = messages || [];
+        var _pgLastA = null;
+        for (var _pgI = _pgArr.length - 1; _pgI >= 0; _pgI--) {
+          var _pgM = _pgArr[_pgI] || {};
+          if ((_pgM.role || (_pgM.is_user === false ? 'assistant' : 'user')) === 'assistant') {
+            _pgLastA = (_pgM.content != null ? _pgM.content : _pgM.mes); break;
+          }
+        }
+        if (typeof _pgLastA === 'string' && _PREG_PROSE_RE.test(_pgLastA)) state._postbirth_correction = true;
+      }
+    }
+  } catch (_pgErr) { console.log('[PROSE-GUARD] skipped: ' + _pgErr); }
 
   updatePersonaRelationship(personaState, name, events, state, rs);
 
