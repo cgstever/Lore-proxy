@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.11",
+  "version": "7.13.12",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -15235,8 +15235,75 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
         return _stripEffectNames(_sLines.join('\n'));
       }
     }
-    var _hasBimboEff = effects.includes('bimbo') || effects.includes('pinup')
-                     || (state && ((state.active_effects || []).includes('bimbo') || (state.active_effects || []).includes('pinup')));
+    // v7.13.12 — PINUP on a no-form-change pill (green/red): the body becomes the body
+    // TYPE (petite/slim/etc) and pinup FOLLOWS it — a real body TX like a pink pill, but
+    // with NO sex change (the body is already this sex; green keeps/completes the female
+    // anatomy per pill lore). NOT the bimbo bombshell overlay. Bust comes from the normal
+    // body-type table (the code that already governs it), so "green petite … pinup" lands a
+    // petite figure, not an E-cup bombshell. Bimbo (below) is the ONLY bombshell trigger now.
+    var _hasPinupEff = effects.includes('pinup') || (state && (state.active_effects || []).includes('pinup'));
+    var _hasBimboToo = effects.includes('bimbo') || (state && (state.active_effects || []).includes('bimbo'));
+    if (_hasPinupEff && !_hasBimboToo && state) {
+      var _pColorEntry = bm[color] || bm[bmColor] || {};
+      if (!_pColorEntry.modifiers) {
+        var _pFallback = (pRule.form_sex === 'female') ? 'pink' : 'blue';
+        _pColorEntry = bm[_pFallback] || {};
+      }
+      var _pMod = modifier || resolveBodyModifier(bmColor, cardBody || {}, rs) || '';
+      var _pModEntry = _pMod ? ((_pColorEntry.modifiers || {})[_pMod] || null) : null;
+      if (_pModEntry) {
+        var _pHeight = _pModEntry.height ? _sampleHeightRange(_pModEntry.height) : '';
+        var _pWeight = _pModEntry.weight ? _sampleWeightRange(_pModEntry.weight) : '';
+        var _pBust = _pModEntry.bust ? _sampleBustRange(_pModEntry.bust) : '';
+        var _pBuild = _pMod || (_pModEntry.build ? _pModEntry.build.split(',')[0].trim() : '');
+        var _pHips = _pModEntry.hips || '';
+        // Card bust floor — a female body never shrinks below the card's declared cup (mirrors the full path)
+        var _pFloorIdx = _cardBustFloorIdx((cardBody || {}).bust);
+        if (_pFloorIdx >= 0 && _cardBustFloorIdx(_pBust) < _pFloorIdx) {
+          var _pNudge = [0, 1, 1, 2][Math.floor(Math.random() * 4)];
+          _pBust = _BUST_LADDER[Math.min(_BUST_LADDER.length - 1, _pFloorIdx + _pNudge)] + ' cup';
+        }
+        if (!state.resolved_body || !state.resolved_body.height) {
+          state.resolved_body = {
+            height: cardBody.height_str || '',
+            weight: (cardBody.weight ? cardBody.weight + 'lbs' : ''),
+            build: (cardBody.build_keywords && cardBody.build_keywords[0]) || '',
+            bust: cardBody.bust || '',
+          };
+        }
+        state.resolved_body = Object.assign({}, state.resolved_body, {
+          height: _pHeight || state.resolved_body.height,
+          weight: _pWeight || state.resolved_body.weight,
+          bust: _pBust || state.resolved_body.bust,
+          build: _pBuild || state.resolved_body.build,
+          hips: _pHips || state.resolved_body.hips,
+          modifier: _pMod,
+        });
+        console.log('[XCW] pinup body-type applied (no-change path, ' + _pMod + '):', JSON.stringify(state.resolved_body));
+
+        var _pLines = [];
+        var _pOrigin = [fromSex];
+        if (cardBody.height_str) _pOrigin.push(cardBody.height_str);
+        if (cardBody.bust) _pOrigin.push(cardBody.bust);
+        var _pTarget = [fromSex];
+        if (_pHeight) _pTarget.push(_pHeight);
+        if (_pBust) _pTarget.push(_pBust);
+        if (_pHips) _pTarget.push('hips: ' + _pHips);
+        _pLines.push('<tx type="pinup-bodytype" modifier="' + _pMod + '">');
+        _pLines.push('  <origin>' + _pOrigin.join(', ') + '</origin>');
+        _pLines.push('  <target>' + _pTarget.join(', ') + '</target>');
+        _pLines.push('  <areas>frame, chest, hips, waist</areas>');
+        _pLines.push('  <sensation>The body reshapes into a ' + _pMod + ' pin-up figure — proportional and softly feminine, curves that fit the frame rather than overwhelm it. Balanced, natural, classically pretty; no bombshell excess.</sensation>');
+        _pLines.push('</tx>');
+        _pLines.push('');
+        _pLines.push('<tx-direction>No sex change — the body is already ' + fromSex + '. Write the body settling into a ' + _pMod + ' pin-up figure across frame/chest/hips/waist. Use ONLY the before/after stats in the tx block — do not invent measurements. 200–350 tokens.</tx-direction>');
+        return _stripEffectNames(_pLines.join('\n'));
+      }
+    }
+
+    // BIMBO (bombshell overlay) — the only effect that forces the exaggerated body. v7.13.12: pinup-only handled above.
+    var _hasBimboEff = effects.includes('bimbo')
+                     || (state && (state.active_effects || []).includes('bimbo'));
     if (_hasBimboEff && state) {
       // Resolve modifier from card body for bust-level lookup
       var _greenMod = modifier || resolveBodyModifier(bmColor, cardBody || {}, rs) || '_default';
@@ -15374,8 +15441,11 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   // micro-discoveries into every action" for 3 turns after TX. Removed in v6.5.207.
 
   // ── Bimbo overlay — override resolved_body bust if bimbo effect is active ──
-  const bimboActive = effects.includes('bimbo') || effects.includes('pinup')
-                   || (state && ((state.active_effects || []).includes('bimbo') || (state.active_effects || []).includes('pinup')));
+  // v7.13.12 — BIMBO only. Pinup no longer forces the bombshell here: pinup "follows the
+  // body type", so on the full TX path it simply rides the resolved body-type body (petite
+  // stays petite). Bimbo is the lone trigger for the exaggerated overlay.
+  const bimboActive = effects.includes('bimbo')
+                   || (state && (state.active_effects || []).includes('bimbo'));
   if (bimboActive) {
     const bimboOverlay = (colorEntry.modifiers || {}).bimbo_overlay || {};
     var bimboBustMap = bimboOverlay.bust_override || {};
