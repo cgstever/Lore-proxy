@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.10",
+  "version": "7.13.11",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -7161,11 +7161,13 @@ const PILL_RULES = {
 const PROXIMITY_CHARS = 40;
 // v7.7.25 — STRICT color-aware pattern.
 //   pink/blue/purple ALLOW optional body modifier (transformation pills change body shape)
-//   red/green REJECT body modifier (no_form_change=true, body word is invalid)
-//
-// Two-branch regex enforces this at parse time. A phrase like "red stocky bull pill"
-// matches NEITHER branch (red doesn't accept body, "stocky bull" fails the no-body
-// branch) and is correctly treated as not-a-valid-offer.
+// v7.13.11 — red/green ALSO allow an optional body modifier now. They were rejected (a body
+//   word matched NEITHER branch → the WHOLE offer was silently dropped: live FTM chat,
+//   "green petite breeder pinup pill" → null, nothing happened). But a body word IS
+//   meaningful on a green/red pill that carries a bimbo/pinup OVERLAY effect — it sizes the
+//   overlay bust via the green-overlay path (~15239, `_greenMod = modifier || …`). With no
+//   overlay effect it's simply inert. Dropping the entire dose (green + breeder + pinup) over
+//   one stray body word was the bug; both branches now take the same optional body slot.
 //
 // v7.7.23 — STRICT pattern: color + (optional body) + 1-4 effects + pill_noun all
 //   space-adjacent. Rejects "blue eyes flickering to the pink pill" false-positives.
@@ -7188,10 +7190,11 @@ function detectPillColor(text, engine) {
     '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
     '(?:(?:' + effectsAlt + ')\\s+){0,4}' +
     '\\b(?:' + nounAlt + ')\\b';
-  // Branch B — no-form-change pills (red/green): NO body modifier slot
+  // Branch B — no-form-change pills (red/green): optional body modifier (v7.13.11, mirrors A)
   const branchB =
     '\\b(red|green)\\b' +
-    '\\s+(?:(?:' + effectsAlt + ')\\s+){0,4}' +
+    '\\s+(?:(?:' + bodyAlt + ')\\s+)?' +
+    '(?:(?:' + effectsAlt + ')\\s+){0,4}' +
     '\\b(?:' + nounAlt + ')\\b';
   const re = new RegExp('(?:' + branchA + ')|(?:' + branchB + ')', 'i');
   const m = re.exec(text);
