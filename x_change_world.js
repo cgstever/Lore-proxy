@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.12",
+  "version": "7.13.13",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -18384,6 +18384,21 @@ function processTurn({systemText, messages, state, personaState, config, charNam
       const sceneSourceText = cardDescription || systemText;
       state._scene_tracker = parseCardSceneContext(sceneSourceText, firstCharMsg);
       const sc = state._scene_tracker;
+      // Seed the live clothing state from the card Outfit block so the clothing
+      // block reflects what the character is wearing when the chat starts; the
+      // normal per-turn clothing scan then takes over. _last_clothing_char was
+      // seeded just above from outfit_slots (drop 'none' slots for display
+      // parity with the <character> Clothing line).
+      if (!sc.clothing_char && state._last_clothing_char) {
+        var _seedClothing = state._last_clothing_char.split(',')
+          .map(function (s) { return s.trim(); })
+          .filter(function (s) { return s && s.toLowerCase() !== 'none'; })
+          .join(', ');
+        if (_seedClothing) {
+          sc.clothing_char = _seedClothing;
+          console.log('[SCENE] Seeded clothing_char from Outfit block: ' + sc.clothing_char);
+        }
+      }
       if (locationOverride) {
         sc.location = locationOverride;
         console.log('[SCENE] Location overridden to:', locationOverride);
