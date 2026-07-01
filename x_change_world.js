@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.13",
+  "version": "7.13.14",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -19053,11 +19053,20 @@ function _buildRequiredBlock(state, rs, isPriorityTurn) {
   if (_st.enabled !== false) {
     var _maxW = _st.max_field_words || 20;
     var _stF = _st.fields || ['char_position','user_position','char_user_relative','clothing_char','clothing_user'];
-    parts.push('- End your response with this block exactly. Fill each "…". Hidden from user. Under ' + _maxW + ' words per field. No code fences.');
+    parts.push('- End your response with this block exactly. The clothing fields are PRE-FILLED with the CURRENT state -- copy each through UNCHANGED unless this turn physically changed it (undressing, redressing, transformation). Fill the "…" fields fresh. Hidden from user. Under ' + _maxW + ' words per field. No code fences.');
     parts.push('');
     parts.push('<scene_state>');
     for (var i = 0; i < _stF.length; i++) {
-      parts.push('  <' + _stF[i] + '>…</' + _stF[i] + '>');
+      var _f = _stF[i];
+      var _cur = '…';
+      var _src = (_f === 'clothing_char') ? (state && state._last_clothing_char)
+               : (_f === 'clothing_user') ? (state && state._last_clothing_user) : '';
+      if (_src) {
+        var _clean = String(_src).split(',').map(function (s) { return s.trim(); })
+                       .filter(function (s) { return s && s.toLowerCase() !== 'none'; }).join(', ');
+        if (_clean) _cur = _clean;
+      }
+      parts.push('  <' + _f + '>' + _cur + '</' + _f + '>');
     }
     parts.push('</scene_state>');
   }
