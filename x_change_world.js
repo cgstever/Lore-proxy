@@ -5,7 +5,7 @@
 const LORE_DATA = 
 {
   "name": "X-Change World (Full Mechanics)",
-  "version": "7.13.14",
+  "version": "7.13.16",
   "versionUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/version.json",
   "sourceUrl": "https://raw.githubusercontent.com/cgstever/overwrite-st/main/x_change_world.js",
   "schema_version": 1,
@@ -14730,6 +14730,72 @@ function _cardBustFloorIdx(bustStr) {
   return m ? _BUST_LADDER.indexOf(m[1].toUpperCase()) : -1;
 }
 
+// ── v7.13.16: origin→target DELTA ────────────────────────────────────────────
+// Cody 2026-08-29: "needs to know starting body vs finish body so it can describe
+// the changes accordingly ... all it seems to use is the starting diff player vs
+// npc height."  He was right: <origin> and <target> were both emitted, but nothing
+// ever subtracted one from the other, and the only computed comparison anywhere in
+// the engine was player-vs-NPC height for spatial framing. So the body-path guide
+// (keyed "average_to_petite" etc.) knew the categorical journey but never its size —
+// a 6'2"/230lb frame and a 5'9"/150lb one going to the same petite target produced
+// identical prose, though one loses 10 inches and 85 pounds and the other barely moves.
+function _inchesFromHeightStr(s) {
+  var m = s ? String(s).match(/(\d+)\s*'\s*(\d+)/) : null;
+  return m ? parseInt(m[1], 10) * 12 + parseInt(m[2], 10) : null;
+}
+function _lbsFromWeight(v) {
+  var m = (v === null || v === undefined) ? null : String(v).match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+function _buildTxDelta(cardBody, tgtHeight, tgtWeight, tgtBust, startLabel, modifier) {
+  cardBody = cardBody || {};
+  var parts = [], score = 0;
+
+  var h0 = _inchesFromHeightStr(cardBody.height_str), h1 = _inchesFromHeightStr(tgtHeight);
+  if (h0 && h1 && h0 !== h1) {
+    var dh = h1 - h0;
+    score += Math.abs(dh) / 2;
+    parts.push('height ' + (dh > 0 ? '+' : '') + dh + '" (' + cardBody.height_str + ' -> ' + tgtHeight + ')');
+  }
+  var w0 = _lbsFromWeight(cardBody.weight), w1 = _lbsFromWeight(tgtWeight);
+  if (w0 && w1 && w0 !== w1) {
+    var dw = w1 - w0;
+    score += Math.abs(dw) / 10;
+    parts.push('weight ' + (dw > 0 ? '+' : '') + dw + 'lb (' + w0 + ' -> ' + w1 + ')');
+  }
+  var b0 = _cardBustFloorIdx(cardBody.bust), b1 = _cardBustFloorIdx(tgtBust);
+  if (b1 >= 0 && b0 >= 0 && b0 !== b1) {
+    var db = b1 - b0;
+    score += Math.abs(db) * 1.5;
+    parts.push('bust ' + (db > 0 ? '+' : '') + db + ' cup' + (Math.abs(db) === 1 ? '' : 's') +
+               ' (' + _BUST_LADDER[b0] + ' -> ' + _BUST_LADDER[b1] + ')');
+  } else if (b1 >= 0 && b0 < 0) {
+    score += 4;
+    parts.push('bust: flat -> ' + _BUST_LADDER[b1] + ' cup');
+  }
+  if (startLabel && modifier && startLabel !== modifier) {
+    parts.push('build ' + startLabel + ' -> ' + modifier);
+  }
+  if (!parts.length) return '';
+
+  // Scale the telling to the size of the change. Kept to one clause each — Cody
+  // 2026-08-29: "less is more with ai prompts". The numbers above already imply
+  // "describe the change", and 7.13.15's rotation is what stops the axis-by-axis
+  // march, so spelling either out again just dilutes the injection.
+  var scale, howto;
+  if (score >= 12) {
+    scale = 'DRASTIC';
+    howto = 'the body cannot keep up — strain, disorientation, clothes failing.';
+  } else if (score >= 5) {
+    scale = 'MODERATE';
+    howto = 'clearly felt, but the body keeps up.';
+  } else {
+    scale = 'SUBTLE';
+    howto = 'understate it; most of the turn belongs elsewhere.';
+  }
+  return parts.join(', ') + ' | ' + scale + ' — ' + howto;
+}
+
 function _buildTransformVoiceAnchor(state) {
   if (!state) return '';
   const domMod = _mod(state, 'DOM');
@@ -15655,6 +15721,10 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   lines.push('<tx type="reference">');
   lines.push('  <origin>' + _originParts.join(', ') + '</origin>');
   lines.push('  <target>' + _targetParts.join(', ') + '</target>');
+  // v7.13.16 — the arithmetic between the two, so the prose scales to the change.
+  var _txDelta = _buildTxDelta(cardBody, sampledHeight, sampledWeight,
+                               _resolvedBust || sampledBust, startLabel, modifier);
+  if (_txDelta) lines.push('  <delta>' + _txDelta + '</delta>');
   if (_clothingStr) lines.push('  <clothing>' + _clothingStr + '</clothing>');
   if (banner) lines.push('  <direction>' + banner + '</direction>');
   // Color-narrative paragraph (background context — kept from txPhysical table)
@@ -15726,9 +15796,40 @@ function buildTransformationGuidance(pillDescriptor, cardBody, cardSex, rs, stat
   lines.push('');
   // v7.7.28 — voice-led tx-direction with per-axis enforcement. The previous
   // version only required "every stage in the genital-tx-guide" — models took
-  // that literally and skipped chest/face/hair/voice. Now each present guide
-  // must show all its stages, and a length floor blocks compression.
-  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. There are multiple stage-list guides above (frame, chest, face, hair, voice, skin, genitals — only the ones present this turn apply). The reaction-register and intake-register tell you HOW the character relates to the change emotionally and to the act of intake. RENDER EVERY STAGE OF EVERY PRESENT GUIDE in the character\'s voice — do not compress multiple stages into a single phrase, do not skip stages, do not let one axis (especially genitals) crowd out the others. Minimum one distinct beat for each guide present plus one for the reaction. Narrate it the way THIS character would experience it — through their mannerisms, dialect, kinks, and natural turn-length. Don\'t list body parts; don\'t produce a paragraph per area; weave the axes through the character\'s reaction. The body MUST end as the target listed above, and every stage in every guide MUST be visible in the prose. If a <rebirth> note is present this is a NEW body — render it forming whole and young, not the old one repaired, keeping only a faint passing resemblance to who they were; when <new-age>, <heal>, or a <limb-regrowth-guide> are present, render the youth, the healing, and any limb regrowth (through its stages) as part of that same transformation. HOW you narrate it is yours.</tx-direction>');
+  // that literally and skipped chest/face/hair/voice.
+  // v7.13.15 — variety rework: "every stage of every guide" made every swipe the
+  // same 25-beat walkthrough in guide order (8-swipe Cilla TX, all near-identical).
+  // Coverage floor stays (one felt beat per present guide, exact target body,
+  // genitals full-detail and last) but each generation now rotates which 2
+  // secondary axes get full stage detail and how the reply enters the moment —
+  // so a re-roll produces a genuinely different telling, not a re-worded one.
+  var _presentAxes = [];
+  if (_frameGuide) _presentAxes.push('frame');
+  if (_chestGuide) _presentAxes.push('chest');
+  if (_faceGuide)  _presentAxes.push('face');
+  if (_hairGuide)  _presentAxes.push('hair');
+  if (_voiceGuide) _presentAxes.push('voice');
+  var _focusAxes = _presentAxes.slice();
+  while (_focusAxes.length > 2) _focusAxes.splice(Math.floor(Math.random() * _focusAxes.length), 1);
+  var _ENTRY_HINTS = [
+    'Enter mid-dialogue — the character is in the middle of saying something when the first change cuts them off.',
+    'Enter on the first raw sensation, before the character understands what is happening.',
+    'Enter on an action already in motion — turning, reaching, stepping — interrupted by the body shifting.',
+    'Enter on what the character sees or hears around them (the other person, the room, their own hands) rather than on their body.',
+    'Enter on a thought or protest mid-stream that the body derails.',
+    'Enter on the other person\'s presence — voice, breath, proximity — with the change arriving underneath it.'
+  ];
+  var _entryHint = _ENTRY_HINTS[Math.floor(Math.random() * _ENTRY_HINTS.length)];
+  var _varietyLine = '';
+  if (_presentAxes.length) {
+    var _bgAxes = _presentAxes.filter(function (a) { return _focusAxes.indexOf(a) < 0; });
+    if (_skinGuide) _bgAxes.push('skin');
+    _varietyLine = 'THIS TELLING: render ' + _focusAxes.join(' and ')
+      + (_genitalGuide ? ' and genitals' : '')
+      + ' through their full stages; ' + (_bgAxes.length ? _bgAxes.join(', ') + ' get' : 'the rest gets')
+      + ' one distinct felt beat each and no more. ' + _entryHint + ' ';
+  }
+  lines.push('<tx-direction>Continue the scene in the character\'s voice and pacing. The stage-list guides above (frame, chest, face, hair, voice, skin, genitals — only the ones present this turn apply) are REFERENCE ANATOMY, not a script: they define what becomes true, not how to write it or what order to write it in. Hard requirements: every present guide surfaces in the prose (minimum one distinct felt beat each, plus one beat for the reaction); the body ends EXACTLY as the target listed above; nothing contradicts a guide\'s end state; the genital change lands last or near-last. ' + _varietyLine + 'Everything else is yours: pick your own order and let changes overlap and interleave instead of marching axis by axis; paraphrase the guides in the character\'s own words — never echo their wording; and do NOT open the way a previous telling of this transformation would (no default standing-at-the-mirror pose, no restating the pill going down — the intake-register already covers how intake happened). Narrate it the way THIS character would experience it — through their mannerisms, dialect, kinks, and natural turn-length; don\'t list body parts or produce a paragraph per area; weave the axes through the character\'s reaction, with the reaction-register and intake-register telling you HOW they relate to the change and to the act of intake. If a <rebirth> note is present this is a NEW body — render it forming whole and young, not the old one repaired, keeping only a faint passing resemblance to who they were; when <new-age>, <heal>, or a <limb-regrowth-guide> are present, render the youth, the healing, and any limb regrowth as part of that same transformation. Make each telling different.</tx-direction>');
 
   return _stripEffectNames(lines.join('\n'));
 }
